@@ -20,7 +20,7 @@ window.CATALOG = [
     { id: 'math5', name: 'Математика', icon: '➗' }
   ]},
   { cls: 6, color: '#3B82F6', subjects: [
-    { id: 'informatics6', name: 'Інформатика', icon: '💻' },
+    { id: 'informatics6', name: 'Інформатика', icon: '💻', ready: true },
     { id: 'math6', name: 'Математика', icon: '➗' }
   ]},
   { cls: 7, color: '#6366F1', subjects: [
@@ -45,5 +45,6 @@ window.AVAILABLE_COURSES = [
   { id: 'informatics2', subject: 'Інформатика', title: 'Інформатика, 2 клас — Морзе, Барна, «Я досліджую світ», ч. 2, 2024' },
   { id: 'informatics3', subject: 'Інформатика', title: 'Інформатика, 3 клас — Морзе, Барна, «Я досліджую світ», ч. 2, 2025' },
   { id: 'informatics4', subject: 'Інформатика', title: 'Інформатика, 4 клас — Морзе, Барна, «Інформатика», 2026' },
-  { id: 'informatics5', subject: 'Інформатика', title: 'Інформатика, 5 клас — Морзе, Барна, «Інформатика», 2022' }
+  { id: 'informatics5', subject: 'Інформатика', title: 'Інформатика, 5 клас — Морзе, Барна, «Інформатика», 2022' },
+  { id: 'informatics6', subject: 'Інформатика', title: 'Інформатика, 6 клас — Морзе, Барна, «Інформатика», 2023' }
 ];
