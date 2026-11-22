@@ -68,6 +68,16 @@
     });
     return m;
   }
+  /* Усі тести курсу в порядку проходження */
+  function courseTests(course, id) {
+    const list = [];
+    course.sections.forEach(s => {
+      s.lessons.forEach(l => list.push({ key: l.id, title: l.n + '. ' + l.title, short: 'Урок ' + l.n, emoji: l.emoji || '📘', href: `#/test/${id}/lesson/${l.id}`, slides: `#/slides/${id}/${l.id}` }));
+      list.push({ key: 'section-' + s.n, title: 'Підсумковий тест за розділ ' + s.n + ' «' + s.title + '»', short: 'Розділ ' + s.n, emoji: '🏁', href: `#/test/${id}/section/${s.n}`, summary: true });
+    });
+    list.push({ key: 'final', title: 'Річний підсумковий тест', short: 'Річний', emoji: '🏆', href: `#/test/${id}/final`, summary: true });
+    return list;
+  }
   const avg = arr => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length * 10) / 10 : null;
 
   /* ---------------- оболонка ---------------- */
@@ -75,7 +85,6 @@
     document.getElementById('brandTitle').textContent = C.siteTitle;
     document.getElementById('brandSub').textContent = C.schoolName;
     document.title = C.siteTitle;
-    document.getElementById('demoBanner').hidden = Store.mode !== 'demo';
     const top = document.getElementById('topbar');
     top.hidden = !user;
     if (!user) return;
@@ -116,8 +125,8 @@
     if (!user) return renderLogin();
     const p = hash.replace(/^#\/?/, '').split('/').filter(Boolean);
     try {
-      if (!p.length) return user.role === 'teacher' ? renderClasses() : renderClass(user.cls);
-      if (p[0] === 'class') return renderClass(+p[1]);
+      if (!p.length) return user.role === 'teacher' ? renderClasses() : await renderClass(user.cls);
+      if (p[0] === 'class') return await renderClass(+p[1]);
       if (p[0] === 'course') return await renderCourse(p[1]);
       if (p[0] === 'slides') return await renderSlides(p[1], p[2]);
       if (p[0] === 'test') return await renderTest(p[1], p[2], p[3]);
@@ -149,6 +158,7 @@
           <p class="muted" style="font-weight:700">Логін і пароль видає вчитель</p>
           <div class="field"><label for="lg">Логін</label><input class="input" id="lg" name="username" autocomplete="username" required autocapitalize="off" spellcheck="false" placeholder="наприклад, 2ivanenko25"></div>
           <div class="field"><label for="pw">Пароль</label><input class="input" id="pw" name="password" type="password" autocomplete="current-password" required></div>
+          ${Store.mode === 'setup' ? `<div class="setup-note">⚙️ Сайт ще не підключено до бази даних. Вчителю: заповніть розділ <b>firebase</b> у файлі <b>js/config.js</b> (інструкція — у README.md).</div>` : ''}
           <div class="form-error" id="lErr">${esc(err || '')}</div>
           <button class="btn brand" type="submit">Увійти →</button>
         </form>
@@ -168,11 +178,11 @@
       <div class="class-grid">${CATALOG.map(k => `
         <a class="class-tile" style="--c:${k.color}" href="#/class/${k.cls}">
           <span class="num">${k.cls}</span><span class="lbl">клас</span>
-          <span class="subs">${k.subjects.map(s => s.name).join(' · ')}</span></a>`).join('')}
+          <span class="subs">${k.subjects.map(s => `<span>${esc(s.name)}</span>`).join('')}</span></a>`).join('')}
       </div>`;
   }
 
-  function renderClass(n) {
+  async function renderClass(n) {
     const k = classInfo(n);
     if (!k) { $app.innerHTML = `<div class="empty"><span class="e">🤷</span>Клас не знайдено</div>`; return; }
     if (n <= 4) document.body.classList.add('theme-primary');
@@ -180,12 +190,43 @@
     $app.innerHTML = `${crumbs}
       <div class="page-head"><div><h1>${user.role === 'student' ? 'Привіт, ' + esc(user.name.split(' ').slice(-1)[0]) + '! 👋' : n + ' клас'}</h1>
       <p>${user.role === 'student' ? n + ' клас · обери предмет' : 'Предмети'}</p></div></div>
+      <div id="reminder"></div>
       <div class="grid g-auto">${k.subjects.map(s => `
         <a class="card subject-tile ${s.ready ? '' : 'soon'}" style="--c:${k.color}" href="${s.ready ? '#/course/' + s.id : 'javascript:void(0)'}" ${s.ready ? '' : 'data-soon'}>
           <span class="ico">${s.icon}</span>
-          <span><h3>${esc(s.name)}</h3><span class="muted" style="font-weight:700;font-size:14px">${s.ready ? 'Презентації та тести' : '⏳ Матеріали готуються'}</span></span>
+          <span class="st-body"><h3>${esc(s.name)}</h3><span class="muted st-sub" id="prog-${s.id}">${s.ready ? 'Презентації та тести' : '⏳ Матеріали готуються'}</span></span>
         </a>`).join('')}</div>`;
     $app.querySelectorAll('[data-soon]').forEach(a => a.addEventListener('click', () => toast('Матеріали з цього предмета ще готуються')));
+    if (user.role !== 'student') return;
+    const here = location.hash;
+    const ready = k.subjects.filter(s => s.ready);
+    if (!ready.length) return;
+    const results = await Store.myResults();
+    const todo = [];
+    let doneAll = 0, totalAll = 0;
+    for (const s of ready) {
+      const course = await loadCourse(s.id);
+      const bm = bestMap(results.filter(r => r.course === s.id));
+      const tests = courseTests(course, s.id);
+      const done = tests.filter(t => bm[t.key] && bm[t.key].best != null).length;
+      doneAll += done; totalAll += tests.length;
+      const el = document.getElementById('prog-' + s.id);
+      if (el) el.innerHTML = `<span class="mini-progress"><i style="width:${done / tests.length * 100}%"></i></span>Виконано ${done} з ${tests.length}`;
+      tests.filter(t => !(bm[t.key] && bm[t.key].best != null)).forEach(t => todo.push(Object.assign({ subject: s }, t)));
+    }
+    if (location.hash !== here) return;
+    const box = document.getElementById('reminder');
+    if (!box) return;
+    box.innerHTML = todo.length ? `
+      <div class="card reminder">
+        <div class="rem-head"><span class="rem-emoji">🔔</span><div><h2>Нагадування</h2>
+          <p>Виконано <b>${doneAll}</b> з <b>${totalAll}</b> тестів. Ще ${todo.length === 1 ? 'залишився' : 'залишилось'} <b>${todo.length}</b>.</p></div></div>
+        <div class="rem-list">${todo.slice(0, 4).map((t, i) => `
+          <a class="rem-item ${i === 0 ? 'next' : ''}" href="${t.href}"><span class="ri-emoji">${t.emoji}</span>
+            <span class="ri-text"><small>${esc(t.subject.name)} · ${esc(t.short)}${i === 0 ? ' · наступний' : ''}</small><b>${esc(t.title)}</b></span><span class="ri-go">→</span></a>`).join('')}
+        </div>
+        ${todo.length > 4 ? `<p class="muted" style="font-weight:800;margin-top:10px;font-size:14px">…і ще ${todo.length - 4}. Усі тести — на сторінці предмета.</p>` : ''}
+      </div>` : `<div class="card reminder done"><div class="rem-head"><span class="rem-emoji">🎉</span><div><h2>Усі тести виконано!</h2><p>Чудова робота! Презентації можна переглядати скільки завгодно.</p></div></div></div>`;
   }
 
   /* ---------------- сторінка курсу ---------------- */
@@ -200,18 +241,29 @@
     const bm = bestMap(results);
     const lessons = course.sections.flatMap(s => s.lessons);
     const passed = lessons.filter(l => bm[l.id] && bm[l.id].best != null).length;
+    const isDone = key => !!(bm[key] && bm[key].best != null);
     const g = (key) => {
       const e = bm[key]; if (!e) return `<span class="grade">—</span>`;
       const v = e.best != null ? e.best : e.last;
       return `<span class="grade ${gradeClass(v)}" title="Спроб: ${e.attempts}">${v}</span>`;
     };
+    /* кнопка тесту: для учня — заблокована після зарахування */
+    const testBtn = (key, href, label, cls) => {
+      if (user.role === 'student' && isDone(key)) return `<span class="btn sm done-btn" title="Тест уже зараховано">🔒 Пройдено</span>`;
+      return `<a class="btn ${cls || ''} sm" href="${href}">${label}</a>`;
+    };
+    const status = key => user.role !== 'student' ? '' : isDone(key)
+      ? '<span class="st st-done">✅ Виконано</span>' : '<span class="st st-todo">⏳ Не виконано</span>';
+    const allTests = courseTests(course, id);
+    const nextT = allTests.find(t => !isDone(t.key));
     const crumbs = `<div class="crumbs">${user.role === 'teacher' ? `<a href="#/">Класи</a><span>›</span>` : ''}<a href="#/class/${meta.cls}">${meta.cls} клас</a><span>›</span><span>${esc(meta.name)}</span></div>`;
 
     $app.innerHTML = `${crumbs}
       <div class="course-hero" style="--c:${meta.color}">
         <div><h1>${esc(meta.name)} · ${meta.cls} клас</h1><p>${esc(course.book || meta.book || '')}</p>
           ${user.role === 'student' ? `<div class="progress-line"><i style="width:${lessons.length ? passed / lessons.length * 100 : 0}%"></i></div>
-          <p style="font-size:14px">Пройдено тестів: ${passed} з ${lessons.length}</p>` : `<p style="font-size:14px">${lessons.length} ${plural(lessons.length, 'урок', 'уроки', 'уроків')} · ${course.sections.length} ${plural(course.sections.length, 'розділ', 'розділи', 'розділів')}</p>`}
+          <p style="font-size:14px">Виконано тестів за уроки: ${passed} з ${lessons.length} · усього: ${allTests.filter(t => isDone(t.key)).length} з ${allTests.length}</p>
+          ${nextT ? `<a class="btn light sm" style="margin-top:12px" href="${nextT.href}">Наступний: ${esc(nextT.short)} →</a>` : '<p style="margin-top:8px">🎉 Усі тести виконано!</p>'}` : `<p style="font-size:14px">${lessons.length} ${plural(lessons.length, 'урок', 'уроки', 'уроків')} · ${course.sections.length} ${plural(course.sections.length, 'розділ', 'розділи', 'розділів')}</p>`}
         </div><div class="big-ico">${meta.icon}</div>
       </div>
       ${course.sections.map(s => `
@@ -221,24 +273,24 @@
             ${s.lessons.map(l => `
               <div class="card lesson-row">
                 <span class="ln">${l.emoji || '📘'}</span>
-                <div><h3>${esc(l.title)}</h3><div class="meta">Урок ${l.n}${l.pages ? ' · с. ' + esc(l.pages) : ''}</div></div>
+                <div><h3>${esc(l.title)}</h3><div class="meta">Урок ${l.n}${l.pages ? ' · с. ' + esc(l.pages) : ''} ${status(l.id)}</div></div>
                 <div class="lesson-actions">
                   <a class="btn light sm" href="#/slides/${id}/${l.id}">🎞 Презентація</a>
-                  <a class="btn sm" href="#/test/${id}/lesson/${l.id}">📝 Тест</a>
+                  ${testBtn(l.id, `#/test/${id}/lesson/${l.id}`, '📝 Тест')}
                   ${user.role === 'student' ? g(l.id) : ''}
                 </div>
               </div>`).join('')}
             <div class="card lesson-row summary-row">
               <span class="ln">🏁</span>
-              <div><h3>Підсумковий тест за розділ ${s.n}</h3><div class="meta">${C.sectionQuestions} питань · ${Math.round(C.sectionQuestions * C.secondsPerQuestion / 60)} хв</div></div>
-              <div class="lesson-actions"><a class="btn brand sm" href="#/test/${id}/section/${s.n}">Почати</a>${user.role === 'student' ? g('section-' + s.n) : ''}</div>
+              <div><h3>Підсумковий тест за розділ ${s.n}</h3><div class="meta">${C.sectionQuestions} питань · ${Math.round(C.sectionQuestions * C.secondsPerQuestion / 60)} хв ${status('section-' + s.n)}</div></div>
+              <div class="lesson-actions">${testBtn('section-' + s.n, `#/test/${id}/section/${s.n}`, 'Почати', 'brand')}${user.role === 'student' ? g('section-' + s.n) : ''}</div>
             </div>
           </div>
         </section>`).join('')}
       <div class="card lesson-row summary-row final">
         <span class="ln">🏆</span>
-        <div><h3>Річний підсумковий тест</h3><div class="meta">${C.finalQuestions} питань за весь курс · ${Math.round(C.finalQuestions * C.secondsPerQuestion / 60)} хв</div></div>
-        <div class="lesson-actions"><a class="btn brand sm" href="#/test/${id}/final">Почати</a>${user.role === 'student' ? g('final') : ''}</div>
+        <div><h3>Річний підсумковий тест</h3><div class="meta">${C.finalQuestions} питань за весь курс · ${Math.round(C.finalQuestions * C.secondsPerQuestion / 60)} хв ${status('final')}</div></div>
+        <div class="lesson-actions">${testBtn('final', `#/test/${id}/final`, 'Почати', 'brand')}${user.role === 'student' ? g('final') : ''}</div>
       </div>`;
   }
 
@@ -275,11 +327,25 @@
     } else {
       pool = all.flatMap(l => l.questions); count = C.finalQuestions; title = 'Річний підсумковий тест'; testId = 'final'; kind = 'final';
     }
+    if (user.role === 'student') {
+      const mine = (await Store.myResults()).filter(r => r.course === id && r.testId === testId && r.passed);
+      if (mine.length) {
+        const best = Math.max(...mine.map(r => r.score));
+        $app.innerHTML = `<div class="crumbs"><a href="#/course/${id}">${esc(meta.name)} · ${meta.cls} клас</a><span>›</span><span>Тест</span></div>
+          <div class="card result-card"><div class="m-emoji" style="font-size:64px">🔒</div>
+            <h2>Тест уже виконано</h2><p class="muted" style="font-weight:700;margin-top:6px">${esc(title)}</p>
+            <div class="score-big" style="color:${best >= 10 ? 'var(--ok)' : best >= 7 ? '#C67700' : '#C2410C'}">${best}<small> / ${C.maxScore}</small></div>
+            <p style="font-weight:700;color:var(--ink-2)">Кожен тест можна пройти лише один раз.${lessonId ? ' Презентацію можна переглядати скільки завгодно.' : ''}</p>
+            <div class="m-actions" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:20px">
+              ${lessonId ? `<a class="btn light" href="#/slides/${id}/${lessonId}">🎞 Переглянути презентацію</a>` : ''}<a class="btn brand" href="#/course/${id}">До уроків</a></div></div>`;
+        return;
+      }
+    }
     const start = () => {
       if (view) view.destroy();
       Protect.set(true, user.role === 'student');
       view = TestEngine.run($app, {
-        title, primary: !!course.primary,
+        title, primary: !!course.primary, student: user.role === 'student',
         questions: TestEngine.pick(pool, Math.min(count, pool.length)),
         backHref: '#/course/' + id,
         crumbs: `<a href="#/course/${id}">${esc(meta.name)} · ${meta.cls} клас</a><span>›</span><span>Тест</span>`,
@@ -510,7 +576,7 @@
     $app.querySelectorAll('[data-st]').forEach(a => a.onclick = () => {
       const s = list.find(x => x.uid === a.dataset.st);
       let rs = (byUser[s.uid] || []).slice().sort((x, y) => (y.atMs || 0) - (x.atMs || 0));
-      const drawM = () => `<h2>${esc(s.name)}</h2><p class="muted" style="font-weight:700;margin-bottom:14px">${s.cls} клас · ${esc(subj.name)} · спроб: ${rs.length}</p>
+      const drawM = () => `<h2>${esc(s.name)}</h2><p class="muted" style="font-weight:700;margin-bottom:14px">${s.cls} клас · ${esc(subj.name)} · спроб: ${rs.length}<br><span style="font-size:13px">Зарахований тест блокується для учня. Щоб дозволити пройти його ще раз, видаліть зараховану спробу (✕).</span></p>
         <div class="table-wrap" style="border:1px solid var(--line)"><table class="tbl"><thead><tr><th>Дата</th><th>Тест</th><th class="c">Оцінка</th><th class="c">Повністю правильно</th><th class="c">Час</th><th class="c" title="Скільки разів учень виходив з вікна тесту">Виходи</th><th></th></tr></thead><tbody>
         ${rs.length ? rs.map(r => `<tr><td>${fmtDate(r.atMs)}</td><td>${esc(r.title)}</td><td class="c"><span class="cell ${gradeClass(r.score)}">${r.score}</span></td>
           <td class="c">${r.full}/${r.total}</td><td class="c">${fmtDur(r.durationSec || 0)}${r.auto ? ' ⌛' : ''}</td><td class="c">${r.leaves || 0}</td>

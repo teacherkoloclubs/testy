@@ -88,13 +88,14 @@
       }).join('')}</div>`;
     }
 
+    let hideMissed = false; // для учня при незарахованому тесті не показуємо пропущені правильні відповіді
     function optHtml(q, i, j, review) {
       const o = q.opts[j]; const s = sel[i].has(j);
       let cls = 'opt ' + (q.multi ? 'multi' : 'single');
       if (review) {
         if (o.correct && s) cls += ' correct';
         else if (!o.correct && s) cls += ' wrong';
-        else if (o.correct && !s) cls += ' missed';
+        else if (o.correct && !s && !hideMissed) cls += ' missed';
       } else if (s) cls += ' sel';
       return `<button class="${cls}" data-q="${i}" data-o="${j}" ${review ? 'disabled' : ''}><span class="mark"></span><span>${esc(o.t)}</span></button>`;
     }
@@ -104,8 +105,8 @@
       let note = '';
       if (review) {
         if (score === 1) note = `<div class="q-result-note ok">✅ Правильно!</div>`;
-        else if (score > 0) note = `<div class="q-result-note part">🟠 Частково правильно (${Math.round(score * 100)}%). Пунктиром позначено пропущені правильні відповіді.</div>`;
-        else note = `<div class="q-result-note bad">❌ Неправильно. Правильні відповіді позначено зеленим.</div>`;
+        else if (score > 0) note = `<div class="q-result-note part">🟠 Частково правильно (${Math.round(score * 100)}%).${hideMissed ? '' : ' Пунктиром позначено пропущені правильні відповіді.'}</div>`;
+        else note = `<div class="q-result-note bad">❌ Неправильно.${hideMissed ? '' : ' Правильні відповіді позначено зеленим.'}</div>`;
       }
       const speakBtn = opts.primary && ukVoice ? `<button class="speak" data-speak="${i}" title="Прочитати вголос">🔊</button>` : '';
       return `<div class="card question">
@@ -180,6 +181,8 @@
       const dur = Math.round(Math.min(elapsed(), total));
       const full = results.filter(r => r === 1).length;
       const stars = score >= 10 ? 3 : score >= 7 ? 2 : score >= 4 ? 1 : 0;
+      hideMissed = !!opts.student && !passed;
+      const canRetry = !opts.student || !passed;
 
       elTimer.classList.remove('low');
       body.innerHTML = `
@@ -193,7 +196,7 @@
             ${auto ? '<span>⌛ Час вийшов — перевірено автоматично</span>' : ''}
           </div>
           <div class="m-actions" style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-            <button class="btn brand" id="tAgain">🔄 Пройти ще раз</button>
+            ${canRetry ? '<button class="btn brand" id="tAgain">🔄 Пройти ще раз</button>' : '<span class="btn done-btn">🔒 Тест зараховано</span>'}
             <a class="btn light" href="${opts.backHref}">До уроків</a>
           </div>
           <p class="muted" id="tSaved" style="margin-top:14px;font-weight:700">Зберігаємо результат…</p>
@@ -201,7 +204,7 @@
         <h2 style="margin:8px 0 14px">Перевірка відповідей</h2>
         ${renderDots(results)}
         ${qs.map((q, i) => `<div id="rq${i}">${questionHtml(i, true, results[i])}</div>`).join('')}`;
-      body.querySelector('#tAgain').addEventListener('click', () => opts.onRestart());
+      const again = body.querySelector('#tAgain'); if (again) again.addEventListener('click', () => opts.onRestart());
       body.querySelectorAll('.qdots button').forEach(b => b.addEventListener('click', () => {
         const el = body.querySelector('#rq' + b.dataset.go); el && el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }));

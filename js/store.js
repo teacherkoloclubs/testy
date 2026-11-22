@@ -95,7 +95,19 @@
         r.uid = u.uid;
         r.at = firebase.firestore.FieldValue.serverTimestamp();
         r.atMs = Date.now();
-        await db.collection('results').add(r);
+        if (r.passed) {
+          /* Зарахований результат має фіксований id: повторно його створити не можна
+             (правила бази забороняють перезапис) — так тест блокується назавжди,
+             доки вчитель не видалить цю спробу. */
+          const id = [u.uid, r.course, r.testId].join('__');
+          try { await db.collection('results').doc(id).set(r); }
+          catch (e) {
+            if (e.code === 'permission-denied') throw new Error('Цей тест уже зараховано раніше');
+            throw e;
+          }
+        } else {
+          await db.collection('results').add(r);
+        }
       },
       async myResults() {
         const u = auth.currentUser;
@@ -110,63 +122,6 @@
     };
   }
 
-  /* =====================================================================
-     ДЕМО (localStorage)
-     ===================================================================== */
-  function DemoStore() {
-    const KEY = 'portal_demo_v1';
-    let memory = null;
-    function load() {
-      if (memory) return memory;
-      try { memory = JSON.parse(localStorage.getItem(KEY)); } catch (e) { memory = null; }
-      if (!memory) {
-        memory = {
-          users: {
-            t1: { role: 'teacher', name: 'Вчитель (демо)', login: 'vchytel', password: '12345' },
-            s1: { role: 'student', name: 'Демо Учень', cls: 2, login: 'demo', password: '1111' }
-          },
-          results: [], session: null
-        };
-      }
-      return memory;
-    }
-    function save() { try { localStorage.setItem(KEY, JSON.stringify(memory)); } catch (e) { /* приватний режим */ } }
-    let listener = () => {};
-    function current() {
-      const m = load(); const id = m.session; const u = id && m.users[id];
-      if (!u) return null;
-      return u.role === 'teacher' ? { uid: id, role: 'teacher', name: u.name } : { uid: id, role: 'student', name: u.name, cls: u.cls, login: u.login };
-    }
-    return {
-      mode: 'demo',
-      onAuth(cb) { listener = cb; setTimeout(() => cb(current()), 0); },
-      async signIn(login, password) {
-        const m = load(); login = String(login).trim().toLowerCase();
-        const id = Object.keys(m.users).find(k => m.users[k].login === login && m.users[k].password === password);
-        if (!id) throw new Error('Неправильний логін або пароль');
-        m.session = id; save(); listener(current());
-      },
-      async signOut() { load().session = null; save(); listener(null); },
-      async listStudents() {
-        const m = load();
-        return Object.keys(m.users).filter(k => m.users[k].role === 'student').map(k => Object.assign({ uid: k }, m.users[k]));
-      },
-      async createStudent(name, cls) {
-        const m = load(); let login;
-        do { login = makeLogin(name, cls); } while (Object.values(m.users).some(u => u.login === login));
-        const password = makePassword(); const uid = 's' + Date.now() + Math.floor(Math.random() * 1000);
-        m.users[uid] = { role: 'student', name: name.trim(), cls: Number(cls), login, password }; save();
-        return { uid, login, password };
-      },
-      async updateStudent(uid, data) { const m = load(); Object.assign(m.users[uid], data); save(); },
-      async deleteStudent(uid) { const m = load(); delete m.users[uid]; m.results = m.results.filter(r => r.uid !== uid); save(); },
-      async saveResult(r) { const m = load(); r.uid = m.session; r.atMs = Date.now(); r.id = 'r' + r.atMs + Math.floor(Math.random() * 1000); m.results.push(r); save(); },
-      async myResults() { const m = load(); return m.results.filter(r => r.uid === m.session); },
-      async courseResults(course) { return load().results.filter(r => r.course === course); },
-      async deleteResult(id) { const m = load(); m.results = m.results.filter(r => r.id !== id); save(); }
-    };
-  }
-
   /* Firebase налаштовано, але бібліотека не завантажилась (немає інтернету / блокування) */
   function BrokenStore() {
     const msg = 'Не вдалося підключитися до сервера. Перевірте інтернет і оновіть сторінку.';
@@ -178,6 +133,16 @@
     };
   }
 
+  /* Firebase ще не налаштовано в js/config.js */
+  function SetupStore() {
+    return {
+      mode: 'setup',
+      onAuth(cb) { setTimeout(() => cb(null), 0); },
+      async signIn() { throw new Error('Сайт ще не підключено до бази даних (див. README.md).'); },
+      async signOut() {}
+    };
+  }
+
   const configured = !!(C.firebase && C.firebase.apiKey);
-  window.Store = hasFirebase ? FirebaseStore() : configured ? BrokenStore() : DemoStore();
+  window.Store = hasFirebase ? FirebaseStore() : configured ? BrokenStore() : SetupStore();
 })();
