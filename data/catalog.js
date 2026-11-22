@@ -16,7 +16,7 @@ window.CATALOG = [
     { id: 'informatics4', name: 'Інформатика', icon: '💻', ready: true }
   ]},
   { cls: 5, color: '#14B8C4', subjects: [
-    { id: 'informatics5', name: 'Інформатика', icon: '💻' },
+    { id: 'informatics5', name: 'Інформатика', icon: '💻', ready: true },
     { id: 'math5', name: 'Математика', icon: '➗' }
   ]},
   { cls: 6, color: '#3B82F6', subjects: [
@@ -30,7 +30,6 @@ window.CATALOG = [
   { cls: 8, color: '#A855F7', subjects: [
     { id: 'informatics8', name: 'Інформатика', icon: '💻' },
     { id: 'physics8', name: 'Фізика', icon: '🔭' },
-    { id: 'health8', name: 'Основи здоров’я', icon: '🍎' },
     { id: 'business8', name: 'Підприємництво', icon: '💼' }
   ]},
   { cls: 9, color: '#EC4899', subjects: [
@@ -45,5 +44,6 @@ window.CATALOG = [
 window.AVAILABLE_COURSES = [
   { id: 'informatics2', subject: 'Інформатика', title: 'Інформатика, 2 клас — Морзе, Барна, «Я досліджую світ», ч. 2, 2024' },
   { id: 'informatics3', subject: 'Інформатика', title: 'Інформатика, 3 клас — Морзе, Барна, «Я досліджую світ», ч. 2, 2025' },
-  { id: 'informatics4', subject: 'Інформатика', title: 'Інформатика, 4 клас — Морзе, Барна, «Інформатика», 2026' }
+  { id: 'informatics4', subject: 'Інформатика', title: 'Інформатика, 4 клас — Морзе, Барна, «Інформатика», 2026' },
+  { id: 'informatics5', subject: 'Інформатика', title: 'Інформатика, 5 клас — Морзе, Барна, «Інформатика», 2022' }
 ];

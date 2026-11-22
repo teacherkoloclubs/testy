@@ -66,6 +66,8 @@
         const s = Object.assign({}, s0);
         s.key = s.key || s.id;
         if (s.ready && !s.course) s.course = s.key;
+        /* новий курс із тим самим id, що й ключ предмета, підключається автоматично */
+        if (!s.course && !s.unlinked && courseExists(s.key)) s.course = s.key;
         if (s.course && !courseExists(s.course)) s.course = '';
         s.id = s.course || s.key;
         s.ready = !!s.course;
@@ -77,7 +79,7 @@
   applyCatalog(BASE_CATALOG);
   function exportCatalog() {
     return CATALOG.map(k => ({ cls: k.cls, color: k.color, subjects: k.subjects.map(s => ({
-      key: s.key, name: s.name, icon: s.icon, course: s.course || '', hidden: !!s.hidden, archive: s.archive || [] })) }));
+      key: s.key, name: s.name, icon: s.icon, course: s.course || '', unlinked: !!s.unlinked, hidden: !!s.hidden, archive: s.archive || [] })) }));
   }
   const visibleSubjects = k => k.subjects.filter(s => !(s.hidden && user && user.role === 'student'));
   function catalogSubject(id) {
@@ -711,6 +713,7 @@
       else {
         const sj = k.subjects[+t.dataset.s];
         sj[f] = t.type === 'checkbox' ? t.checked : t.value;
+        if (f === 'course') sj.unlinked = !t.value;
         if (f === 'course' && t.value && (!sj.name || sj.name === 'Новий предмет')) { const c = AVAILABLE.find(x => x.id === t.value); if (c && c.subject) { sj.name = c.subject; draw(); } }
         if (f === 'hidden') t.closest('.adm-row').classList.toggle('is-hidden', t.checked);
       }
