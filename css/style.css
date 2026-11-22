@@ -413,3 +413,11 @@ h1, h2, h3 { overflow-wrap: break-word; }
   .adm-row { grid-template-columns: 56px 1fr; }
   .adm-row select, .adm-row .adm-check, .adm-row .adm-btns { grid-column: 1 / -1; }
 }
+
+/* ---------- назви предметів без розривів посеред слова ---------- */
+.subject-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr)); }
+.subject-tile { gap: 16px; padding: 20px; }
+.subject-tile .ico { width: 58px; height: 58px; font-size: 30px; border-radius: 18px; }
+.subject-tile h3, .subject-tile h3 * { font-family: var(--font); font-weight: 900; font-size: 20px; line-height: 1.2;
+  overflow-wrap: normal; word-break: normal; hyphens: manual; }
+.class-tile .subs span { overflow-wrap: normal; word-break: normal; }

@@ -237,7 +237,7 @@
       <div class="page-head"><div><h1>${user.role === 'student' ? 'Привіт, ' + esc(user.name.split(' ').slice(-1)[0]) + '! 👋' : n + ' клас'}</h1>
       <p>${user.role === 'student' ? n + ' клас · обери предмет' : 'Предмети'}</p></div></div>
       <div id="reminder"></div>
-      <div class="grid g-auto">${visibleSubjects(k).map(s => `
+      <div class="grid subject-grid">${visibleSubjects(k).map(s => `
         <a class="card subject-tile ${s.ready ? '' : 'soon'}" style="--c:${k.color}" href="${s.ready ? '#/course/' + s.id : 'javascript:void(0)'}" ${s.ready ? '' : 'data-soon'}>
           <span class="ico">${s.icon}</span>
           <span class="st-body"><h3>${esc(s.name)}${s.hidden ? ' <span class="tag">🙈 приховано</span>' : ''}</h3><span class="muted st-sub" id="prog-${s.id}">${s.ready ? 'Презентації та тести' : '⏳ Матеріали готуються'}</span></span>

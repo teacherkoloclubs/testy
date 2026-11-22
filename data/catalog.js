@@ -13,7 +13,7 @@ window.CATALOG = [
     { id: 'informatics3', name: 'Інформатика', icon: '💻', ready: true }
   ]},
   { cls: 4, color: '#2BB673', subjects: [
-    { id: 'informatics4', name: 'Інформатика', icon: '💻' }
+    { id: 'informatics4', name: 'Інформатика', icon: '💻', ready: true }
   ]},
   { cls: 5, color: '#14B8C4', subjects: [
     { id: 'informatics5', name: 'Інформатика', icon: '💻' },
@@ -44,5 +44,6 @@ window.CATALOG = [
    Саме їх учитель може прив’язати до предмета в розділі «Предмети». */
 window.AVAILABLE_COURSES = [
   { id: 'informatics2', subject: 'Інформатика', title: 'Інформатика, 2 клас — Морзе, Барна, «Я досліджую світ», ч. 2, 2024' },
-  { id: 'informatics3', subject: 'Інформатика', title: 'Інформатика, 3 клас — Морзе, Барна, «Я досліджую світ», ч. 2, 2025' }
+  { id: 'informatics3', subject: 'Інформатика', title: 'Інформатика, 3 клас — Морзе, Барна, «Я досліджую світ», ч. 2, 2025' },
+  { id: 'informatics4', subject: 'Інформатика', title: 'Інформатика, 4 клас — Морзе, Барна, «Інформатика», 2026' }
 ];
