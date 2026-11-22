@@ -1,0 +1,33 @@
+rules_version = '2';
+// Правила безпеки бази даних. Вставте цей текст у Firebase Console →
+// Firestore Database → Rules і натисніть Publish.
+// ВАЖЛИВО: замініть teacher@example.com на свою пошту (ту саму, що в js/config.js).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isTeacher() {
+      return signedIn() && request.auth.token.email in ['teacher@example.com'];
+    }
+
+    // Профілі учнів: створює і змінює лише вчитель; учень бачить тільки свій
+    match /users/{uid} {
+      allow read: if isTeacher() || (signedIn() && request.auth.uid == uid);
+      allow write: if isTeacher();
+    }
+
+    // Результати тестів: учень додає лише свої і бачить лише свої;
+    // вчитель бачить усі й може видаляти
+    match /results/{id} {
+      allow read: if isTeacher() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && request.resource.data.score is int
+        && request.resource.data.score >= 0
+        && request.resource.data.score <= 12;
+      allow update: if false;
+      allow delete: if isTeacher();
+    }
+  }
+}
