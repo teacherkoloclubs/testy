@@ -392,3 +392,24 @@ h1, h2, h3 { overflow-wrap: break-word; }
 .slides-shell .source-note { margin: 14px 0 0; }
 .slide.s-source { background: linear-gradient(135deg, #F4F2FF, #fff); text-align: center; align-items: center; }
 .slide.s-source .src-text { font-size: 1.05em; font-weight: 800; color: var(--ink); max-width: 34em; }
+
+/* ---------- адміністрування предметів ---------- */
+.adm-class { margin-bottom: 18px; border-top: 6px solid var(--c); }
+.adm-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.adm-head h2 { flex: 1; min-width: 120px; }
+.adm-num { width: 46px; height: 46px; border-radius: 15px; display: grid; place-items: center; background: var(--c); color: #fff; font-family: var(--font-head); font-weight: 800; font-size: 20px; }
+.adm-color input { width: 42px; height: 38px; border: 2px solid var(--line); border-radius: 12px; padding: 2px; background: #fff; cursor: pointer; }
+.adm-list { display: grid; gap: 10px; }
+.adm-row { display: grid; grid-template-columns: 62px minmax(140px, 1fr) minmax(180px, 1.4fr) auto auto; gap: 10px; align-items: center; padding: 10px; border-radius: 16px; background: #FBFAFF; border: 1px solid var(--line); }
+.adm-row .input { padding: 10px 12px; }
+.adm-icon { text-align: center; font-size: 22px; }
+.adm-row.is-hidden { opacity: .55; }
+.adm-check { display: flex; gap: 6px; align-items: center; font-weight: 800; font-size: 14px; white-space: nowrap; }
+.adm-check input { width: 18px; height: 18px; }
+.adm-btns { display: flex; gap: 6px; }
+.adm-btns .icon-btn[disabled] { opacity: .35; cursor: default; }
+.adm-del:hover { background: var(--bad-bg); }
+@media (max-width: 760px) {
+  .adm-row { grid-template-columns: 56px 1fr; }
+  .adm-row select, .adm-row .adm-check, .adm-row .adm-btns { grid-column: 1 / -1; }
+}

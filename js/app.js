@@ -52,7 +52,34 @@
 
   /* Видання підручника: у каталозі subject.course — id чинного курсу,
      subject.archive — попередні видання (лише для перегляду вчителем). */
-  CATALOG.forEach(k => k.subjects.forEach(s => { if (s.course) s.id = s.course; }));
+  /* Каталог класів і предметів: базовий з data/catalog.js або збережений вчителем у базі.
+     subject.key — постійний ключ предмета; subject.course — id курсу з матеріалами (або порожньо);
+     subject.id після нормалізації = id курсу (до нього прив’язані результати) або key. */
+  const AVAILABLE = window.AVAILABLE_COURSES || [];
+  const courseExists = id => AVAILABLE.some(c => c.id === id);
+  const BASE_CATALOG = JSON.parse(JSON.stringify(CATALOG));
+  function applyCatalog(classes) {
+    CATALOG.length = 0;
+    classes.slice().sort((a, b) => a.cls - b.cls).forEach(k => CATALOG.push({
+      cls: Number(k.cls), color: k.color || '#5B4BF5',
+      subjects: (k.subjects || []).map(s0 => {
+        const s = Object.assign({}, s0);
+        s.key = s.key || s.id;
+        if (s.ready && !s.course) s.course = s.key;
+        if (s.course && !courseExists(s.course)) s.course = '';
+        s.id = s.course || s.key;
+        s.ready = !!s.course;
+        s.icon = s.icon || '📘';
+        return s;
+      })
+    }));
+  }
+  applyCatalog(BASE_CATALOG);
+  function exportCatalog() {
+    return CATALOG.map(k => ({ cls: k.cls, color: k.color, subjects: k.subjects.map(s => ({
+      key: s.key, name: s.name, icon: s.icon, course: s.course || '', hidden: !!s.hidden, archive: s.archive || [] })) }));
+  }
+  const visibleSubjects = k => k.subjects.filter(s => !(s.hidden && user && user.role === 'student'));
   function catalogSubject(id) {
     for (const k of CATALOG) for (const s of k.subjects)
       if (s.id === id) return Object.assign({ cls: k.cls, color: k.color }, s);
@@ -107,7 +134,7 @@
     top.hidden = !user;
     if (!user) return;
     const links = user.role === 'teacher'
-      ? [['#/', 'Класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні']]
+      ? [['#/', 'Класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/teacher/subjects', 'Предмети']]
       : [['#/', 'Мої предмети'], ['#/my', 'Мої результати']];
     const h = location.hash || '#/';
     document.getElementById('topnav').innerHTML = links.map(([href, t]) =>
@@ -152,6 +179,7 @@
       if (p[0] === 'teacher' && user.role === 'teacher') {
         if (p[1] === 'students') return await renderStudents();
         if (p[1] === 'results') return await renderResults(p[2], p[3]);
+        if (p[1] === 'subjects') return renderSubjectsAdmin();
       }
       $app.innerHTML = `<div class="empty"><span class="e">🧭</span>Сторінку не знайдено. <a href="#/">На головну</a></div>`;
     } catch (e) {
@@ -209,15 +237,15 @@
       <div class="page-head"><div><h1>${user.role === 'student' ? 'Привіт, ' + esc(user.name.split(' ').slice(-1)[0]) + '! 👋' : n + ' клас'}</h1>
       <p>${user.role === 'student' ? n + ' клас · обери предмет' : 'Предмети'}</p></div></div>
       <div id="reminder"></div>
-      <div class="grid g-auto">${k.subjects.map(s => `
+      <div class="grid g-auto">${visibleSubjects(k).map(s => `
         <a class="card subject-tile ${s.ready ? '' : 'soon'}" style="--c:${k.color}" href="${s.ready ? '#/course/' + s.id : 'javascript:void(0)'}" ${s.ready ? '' : 'data-soon'}>
           <span class="ico">${s.icon}</span>
-          <span class="st-body"><h3>${esc(s.name)}</h3><span class="muted st-sub" id="prog-${s.id}">${s.ready ? 'Презентації та тести' : '⏳ Матеріали готуються'}</span></span>
+          <span class="st-body"><h3>${esc(s.name)}${s.hidden ? ' <span class="tag">🙈 приховано</span>' : ''}</h3><span class="muted st-sub" id="prog-${s.id}">${s.ready ? 'Презентації та тести' : '⏳ Матеріали готуються'}</span></span>
         </a>`).join('')}</div>`;
     $app.querySelectorAll('[data-soon]').forEach(a => a.addEventListener('click', () => toast('Матеріали з цього предмета ще готуються')));
     if (user.role !== 'student') return;
     const here = location.hash;
-    const ready = k.subjects.filter(s => s.ready);
+    const ready = visibleSubjects(k).filter(s => s.ready);
     if (!ready.length) return;
     const results = await Store.myResults();
     const todo = [];
@@ -392,7 +420,7 @@
     $app.innerHTML = '<div class="loader"><span></span></div>';
     const results = await Store.myResults();
     const k = classInfo(user.cls);
-    const courses = (k ? k.subjects : []).filter(s => s.ready);
+    const courses = (k ? visibleSubjects(k) : []).filter(s => s.ready);
     let html = `<div class="page-head"><div><h1>Мої результати</h1><p>${esc(user.name)} · ${user.cls} клас</p></div></div>`;
     if (!courses.length) { $app.innerHTML = html + `<div class="card empty"><span class="e">📭</span>Поки немає курсів</div>`; return; }
     for (const s of courses) {
@@ -626,11 +654,133 @@
     });
   }
 
+  /* ---------------- вчитель: предмети за класами ---------------- */
+  function renderSubjectsAdmin() {
+    let draft = exportCatalog();
+    let dirty = false;
+    const COLORS = ['#FF7A59', '#FFB020', '#2BB673', '#14B8C4', '#3B82F6', '#6366F1', '#A855F7', '#EC4899', '#F43F5E', '#0EA5E9', '#84CC16'];
+    const courseOpts = sel => `<option value="">— матеріали готуються —</option>` +
+      AVAILABLE.map(c => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${esc(c.title)}</option>`).join('');
+    const mark = () => { dirty = true; const b = $app.querySelector('#saveCat'); if (b) { b.disabled = false; b.textContent = '💾 Зберегти зміни'; } };
+    function draw() {
+      $app.innerHTML = `
+        <div class="page-head"><div><h1>Предмети за класами</h1>
+          <p>Додавайте й прибирайте класи та предмети, змінюйте назви, значки й порядок, приховуйте від учнів.</p></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn light" id="addCls">＋ Додати клас</button>
+            <button class="btn light" id="resetCat">↺ Стандартний список</button>
+            <button class="btn brand" id="saveCat" ${dirty ? '' : 'disabled'}>${dirty ? '💾 Зберегти зміни' : '✔ Збережено'}</button>
+          </div></div>
+        <div class="card pad" style="margin-bottom:18px;font-weight:700;color:var(--ink-2);font-size:14px">
+          💡 «Матеріали» — це готові тести й презентації за підручником. Предмет без матеріалів учні бачать з позначкою «Матеріали готуються».
+          Нові матеріали за PDF підручника готує Claude — після цього вони з’являться в списку.
+          Якщо видалити предмет, результати учнів у базі не зникають: поверніть предмет із тими самими матеріалами — і оцінки знову буде видно.
+        </div>
+        ${draft.map((k, ki) => `
+          <div class="card pad adm-class" style="--c:${esc(k.color)}">
+            <div class="adm-head">
+              <span class="adm-num">${k.cls}</span><h2>${k.cls} клас</h2>
+              <label class="adm-color" title="Колір класу"><input type="color" value="${esc(k.color)}" data-k="${ki}" data-f="color"></label>
+              <button class="btn danger sm" data-delcls="${ki}">🗑 Видалити клас</button>
+            </div>
+            <div class="adm-list">
+              ${k.subjects.length ? k.subjects.map((sj, si) => `
+                <div class="adm-row ${sj.hidden ? 'is-hidden' : ''}">
+                  <input class="input adm-icon" value="${esc(sj.icon)}" maxlength="4" data-k="${ki}" data-s="${si}" data-f="icon" title="Значок (емодзі)">
+                  <input class="input" value="${esc(sj.name)}" placeholder="Назва предмета" data-k="${ki}" data-s="${si}" data-f="name">
+                  <select class="input" data-k="${ki}" data-s="${si}" data-f="course" title="Матеріали">${courseOpts(sj.course)}</select>
+                  <label class="adm-check"><input type="checkbox" ${sj.hidden ? 'checked' : ''} data-k="${ki}" data-s="${si}" data-f="hidden"> Приховати</label>
+                  <span class="adm-btns">
+                    <button class="icon-btn" data-mv="${ki}:${si}:-1" title="Вище" ${si === 0 ? 'disabled' : ''}>↑</button>
+                    <button class="icon-btn" data-mv="${ki}:${si}:1" title="Нижче" ${si === k.subjects.length - 1 ? 'disabled' : ''}>↓</button>
+                    <button class="icon-btn adm-del" data-delsub="${ki}:${si}" title="Видалити предмет">🗑</button>
+                  </span>
+                </div>`).join('') : '<p class="muted" style="font-weight:700">Предметів ще немає</p>'}
+            </div>
+            <button class="btn light sm" data-addsub="${ki}" style="margin-top:12px">＋ Додати предмет</button>
+          </div>`).join('')}`;
+    }
+    draw();
+    $app.addEventListener('input', onInput);
+    $app.addEventListener('change', onInput);
+    function onInput(e) {
+      const t = e.target; if (!t.dataset || t.dataset.f === undefined || !$app.querySelector('#saveCat')) return;
+      const k = draft[+t.dataset.k]; if (!k) return;
+      const f = t.dataset.f;
+      if (t.dataset.s === undefined) { k[f] = t.value; t.closest('.adm-class').style.setProperty('--c', t.value); }
+      else {
+        const sj = k.subjects[+t.dataset.s];
+        sj[f] = t.type === 'checkbox' ? t.checked : t.value;
+        if (f === 'course' && t.value && (!sj.name || sj.name === 'Новий предмет')) { const c = AVAILABLE.find(x => x.id === t.value); if (c && c.subject) { sj.name = c.subject; draw(); } }
+        if (f === 'hidden') t.closest('.adm-row').classList.toggle('is-hidden', t.checked);
+      }
+      mark();
+    }
+    $app.onclick = async e => {
+      const b = e.target.closest('button'); if (!b || !$app.querySelector('#saveCat')) return;
+      if (b.id === 'addCls') {
+        modal(`<h2>Новий клас</h2><div class="field"><label>Номер класу (1–11)</label><input class="input" id="nCls" type="number" min="1" max="11"></div>
+          <div class="form-error" id="nErr"></div><div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="nGo">Додати</button></div>`,
+          (box, close) => box.querySelector('#nGo').onclick = () => {
+            const n = +box.querySelector('#nCls').value;
+            if (!(n >= 1 && n <= 11)) { box.querySelector('#nErr').textContent = 'Введіть число від 1 до 11'; return; }
+            if (draft.some(k => k.cls === n)) { box.querySelector('#nErr').textContent = 'Такий клас уже є'; return; }
+            draft.push({ cls: n, color: COLORS[n % COLORS.length], subjects: [] }); draft.sort((a, b) => a.cls - b.cls);
+            close(); mark(); draw(); mark();
+          });
+        return;
+      }
+      if (b.id === 'resetCat') {
+        modal(`<div class="m-emoji">↺</div><h2>Повернути стандартний список?</h2><p>Усі ваші зміни в предметах буде замінено початковим списком (після збереження). Результати учнів не зміняться.</p>
+          <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" data-close id="rGo">Повернути</button></div>`,
+          box => box.querySelector('#rGo').onclick = () => { applyCatalog(BASE_CATALOG); draft = exportCatalog(); draw(); mark(); });
+        return;
+      }
+      if (b.id === 'saveCat') {
+        b.disabled = true; b.textContent = 'Зберігаємо…';
+        try {
+          const clean = draft.map(k => ({ cls: k.cls, color: k.color, subjects: k.subjects.map(sj => Object.assign({}, sj, { name: (sj.name || '').trim() || 'Без назви', icon: (sj.icon || '').trim() || '📘' })) }));
+          await Store.saveCatalog(clean); applyCatalog(clean); draft = exportCatalog(); dirty = false; draw(); toast('Предмети збережено');
+        } catch (er) { b.disabled = false; b.textContent = '💾 Зберегти зміни'; toast('Помилка: ' + er.message); }
+        return;
+      }
+      if (b.dataset.addsub !== undefined) {
+        const k = draft[+b.dataset.addsub];
+        k.subjects.push({ key: 's' + Date.now().toString(36), name: 'Новий предмет', icon: '📘', course: '', hidden: false, archive: [] });
+        mark(); draw(); mark();
+        const inputs = $app.querySelectorAll(`[data-k="${b.dataset.addsub}"][data-f="name"]`); const last = inputs[inputs.length - 1]; if (last) { last.focus(); last.select(); }
+        return;
+      }
+      if (b.dataset.mv) {
+        const [ki, si, d] = b.dataset.mv.split(':').map(Number); const arr = draft[ki].subjects;
+        [arr[si], arr[si + d]] = [arr[si + d], arr[si]]; mark(); draw(); mark(); return;
+      }
+      if (b.dataset.delsub) {
+        const [ki, si] = b.dataset.delsub.split(':').map(Number); const sj = draft[ki].subjects[si];
+        modal(`<div class="m-emoji">🗑</div><h2>Видалити предмет?</h2><p><b>${esc(sj.icon)} ${esc(sj.name)}</b> зникне з ${draft[ki].cls} класу після збереження.${sj.course ? ' Результати учнів у базі залишаться.' : ''}</p>
+          <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn danger" data-close id="dGo">Видалити</button></div>`,
+          box => box.querySelector('#dGo').onclick = () => { draft[ki].subjects.splice(si, 1); mark(); draw(); mark(); });
+        return;
+      }
+      if (b.dataset.delcls !== undefined) {
+        const ki = +b.dataset.delcls; const k = draft[ki];
+        modal(`<div class="m-emoji">🗑</div><h2>Видалити ${k.cls} клас?</h2><p>Клас і всі його предмети (${k.subjects.length}) зникнуть зі списку після збереження. Облікові записи учнів і їхні результати залишаться.</p>
+          <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn danger" data-close id="dcGo">Видалити</button></div>`,
+          box => box.querySelector('#dcGo').onclick = () => { draft.splice(ki, 1); mark(); draw(); mark(); });
+      }
+    };
+    view = { active: false, destroy() { $app.removeEventListener('input', onInput); $app.removeEventListener('change', onInput); $app.onclick = null; } };
+  }
+
   /* ---------------- старт ---------------- */
   window.App = { modal, plural, toast };
-  Store.onAuth((u, err) => {
+  Store.onAuth(async (u, err) => {
     user = u;
     if (!u && err) { setChrome(); renderLogin(err); return; }
+    if (u && Store.getCatalog) {
+      try { const remote = await Store.getCatalog(); if (remote && remote.length) applyCatalog(remote); }
+      catch (e) { console.warn('Каталог з бази не завантажено', e); }
+    }
     if (u && (!location.hash || location.hash === '#/login')) history.replaceState(null, '', '#/');
     skipGuard = true;
     route();

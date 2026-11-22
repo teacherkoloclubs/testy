@@ -118,7 +118,14 @@
         const qs = await db.collection('results').where('course', '==', course).get();
         return qs.docs.map(d => Object.assign({ id: d.id }, d.data()));
       },
-      async deleteResult(id) { await db.collection('results').doc(id).delete(); }
+      async deleteResult(id) { await db.collection('results').doc(id).delete(); },
+      async getCatalog() {
+        const d = await db.collection('config').doc('catalog').get();
+        return d.exists ? d.data().classes : null;
+      },
+      async saveCatalog(classes) {
+        await db.collection('config').doc('catalog').set({ classes, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+      }
     };
   }
 

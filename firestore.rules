@@ -16,6 +16,12 @@ service cloud.firestore {
       allow write: if isTeacher();
     }
 
+    // Налаштування сайту (список класів і предметів): читають усі, хто увійшов; змінює вчитель
+    match /config/{doc} {
+      allow read: if signedIn();
+      allow write: if isTeacher();
+    }
+
     // Результати тестів: учень додає лише свої і бачить лише свої;
     // вчитель бачить усі й може видаляти
     match /results/{id} {
