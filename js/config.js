@@ -9,20 +9,19 @@ window.APP_CONFIG = {
 
   /* 1) Вставте сюди налаштування з Firebase Console
         (Project settings → Your apps → Web app → firebaseConfig).
-        Поки поле apiKey порожнє, сайт працює в ДЕМО-РЕЖИМІ:
-        усе зберігається лише в цьому браузері. */
+        Поки поле apiKey порожнє, увійти на сайт неможливо. */
   firebase: {
-    apiKey: '',
-    authDomain: '',
-    projectId: '',
-    storageBucket: '',
-    messagingSenderId: '',
-    appId: ''
+    apiKey: 'AIzaSyC8POXwFRlRdBxm0c044gkbVCGXuCy8y_k',
+    authDomain: 'shkola-testy.firebaseapp.com',
+    projectId: 'shkola-testy',
+    storageBucket: 'shkola-testy.firebasestorage.app',
+    messagingSenderId: '768893946813',
+    appId: '1:768893946813:web:47bd81b524003914c860d4'
   },
 
   /* 2) Пошта (або кілька) облікового запису вчителя.
         Такий самий список має бути у файлі firestore.rules */
-  teacherEmails: ['teacher@example.com'],
+  teacherEmails: ['teacher@example.com'], // ← ЗАМІНІТЬ на пошту вчителя з Firebase → Authentication → Users
 
   /* Учні входять за логіном; технічно логін перетворюється на адресу
      login@<цей домен>. Справжня пошта не потрібна. Не змінюйте після
