@@ -45,8 +45,10 @@
           <button class="btn light" id="sNext">→</button>
           <button class="btn light" id="sFull" title="На весь екран">⛶</button>
         </div>
+        ${opts.source || ''}
       </div>`;
     const stage = root.querySelector('#stage');
+    if (opts.sourceText) stage.insertAdjacentHTML('beforeend', `<div class="slide s-source"><div class="s-label">📚 Джерело інформації</div><h2>Матеріал підготовлено за підручником</h2><p class="src-text">${opts.sourceText}</p></div>`);
     const els = [...stage.querySelectorAll('.slide')];
     els.forEach(el => el.style.setProperty('--c', opts.color));
 

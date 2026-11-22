@@ -50,9 +50,27 @@
     return COURSES[id];
   }
 
+  /* Видання підручника: у каталозі subject.course — id чинного курсу,
+     subject.archive — попередні видання (лише для перегляду вчителем). */
+  CATALOG.forEach(k => k.subjects.forEach(s => { if (s.course) s.id = s.course; }));
   function catalogSubject(id) {
-    for (const k of CATALOG) for (const s of k.subjects) if (s.id === id) return Object.assign({ cls: k.cls, color: k.color }, s);
+    for (const k of CATALOG) for (const s of k.subjects)
+      if (s.id === id) return Object.assign({ cls: k.cls, color: k.color }, s);
+    for (const k of CATALOG) for (const s of k.subjects) {
+      const old = (s.archive || []).find(a => a.course === id);
+      if (old) return Object.assign({ cls: k.cls, color: k.color }, s, { id: old.course, ready: true, archived: true, editionLabel: old.label });
+    }
     return null;
+  }
+  /* Рядок про підручник-джерело */
+  function bookLine(course, opts) {
+    const t = course.textbook;
+    if (!t) return esc(course.book || '');
+    const main = `${esc(t.authors)}. «${esc(t.title)}». Підручник для ${t.grade} класу${t.part ? ', ч. ' + esc(t.part) : ''}. — ${esc(t.publisher)}, ${t.year}`;
+    return opts && opts.short ? `«${esc(t.title)}», ${t.grade} клас${t.part ? ', ч. ' + esc(t.part) : ''} · ${esc(t.authors)} · ${esc(t.publisher)}, ${t.year}` : main;
+  }
+  function sourceNote(course, pages) {
+    return `<div class="source-note">📚 <span><b>Джерело:</b> ${bookLine(course)}${pages ? `, с. ${esc(pages)}` : ''}.${course.textbook && course.textbook.approval ? ` <span class="muted">${esc(course.textbook.approval)}</span>` : ''}</span></div>`;
   }
   function classInfo(n) { return CATALOG.find(k => k.cls === +n); }
 
@@ -97,7 +115,7 @@
     document.getElementById('userchip').innerHTML = `
       <span class="avatar">${esc(initials(user.name))}</span>
       <span class="who"><b>${esc(user.name)}</b><small>${user.role === 'teacher' ? 'Вчитель' : user.cls + ' клас'}</small></span>
-      <button class="icon-btn" id="logout" title="Вийти">⏻</button>`;
+      <button class="logout-btn" id="logout" title="Вийти з порталу"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg><span>Вийти</span></button>`;
     document.getElementById('logout').onclick = () => modal(`<div class="m-emoji">👋</div><h2>Вийти з порталу?</h2>
       <div class="m-actions"><button class="btn light" data-close>Ні</button><button class="btn" data-close id="mOut">Вийти</button></div>`,
       b => b.querySelector('#mOut').onclick = () => { history.replaceState(null, '', '#/'); lastHash = '#/'; Store.signOut(); });
@@ -233,7 +251,7 @@
   async function renderCourse(id) {
     const meta = catalogSubject(id);
     if (!meta || !meta.ready) { $app.innerHTML = `<div class="empty"><span class="e">⏳</span>Матеріали ще готуються</div>`; return; }
-    if (user.role === 'student' && meta.cls !== user.cls) { location.hash = '#/'; return; }
+    if (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) { location.hash = '#/'; return; }
     $app.innerHTML = '<div class="loader"><span></span></div>';
     const course = await loadCourse(id);
     if (course.primary) document.body.classList.add('theme-primary');
@@ -260,7 +278,7 @@
 
     $app.innerHTML = `${crumbs}
       <div class="course-hero" style="--c:${meta.color}">
-        <div><h1>${esc(meta.name)} · ${meta.cls} клас</h1><p>${esc(course.book || meta.book || '')}</p>
+        <div><h1>${esc(meta.name)} · ${meta.cls} клас</h1><p>${bookLine(course, { short: true })}</p>${meta.archived ? `<p style="font-size:14px">🗄 Архівне видання${meta.editionLabel ? ': ' + esc(meta.editionLabel) : ''}</p>` : ''}
           ${user.role === 'student' ? `<div class="progress-line"><i style="width:${lessons.length ? passed / lessons.length * 100 : 0}%"></i></div>
           <p style="font-size:14px">Виконано тестів за уроки: ${passed} з ${lessons.length} · усього: ${allTests.filter(t => isDone(t.key)).length} з ${allTests.length}</p>
           ${nextT ? `<a class="btn light sm" style="margin-top:12px" href="${nextT.href}">Наступний: ${esc(nextT.short)} →</a>` : '<p style="margin-top:8px">🎉 Усі тести виконано!</p>'}` : `<p style="font-size:14px">${lessons.length} ${plural(lessons.length, 'урок', 'уроки', 'уроків')} · ${course.sections.length} ${plural(course.sections.length, 'розділ', 'розділи', 'розділів')}</p>`}
@@ -291,13 +309,20 @@
         <span class="ln">🏆</span>
         <div><h3>Річний підсумковий тест</h3><div class="meta">${C.finalQuestions} питань за весь курс · ${Math.round(C.finalQuestions * C.secondsPerQuestion / 60)} хв ${status('final')}</div></div>
         <div class="lesson-actions">${testBtn('final', `#/test/${id}/final`, 'Почати', 'brand')}${user.role === 'student' ? g('final') : ''}</div>
-      </div>`;
+      </div>
+      <div style="margin-top:22px">${sourceNote(course)}</div>`;
+  }
+  /* сторінки підручника для групи уроків: «5–8» + «9–12» → «5–12» */
+  function pagesRange(lessons) {
+    const nums = lessons.map(l => String(l.pages || '').split(/[–-]/).map(Number)).filter(a => a[0]);
+    if (!nums.length) return '';
+    return Math.min(...nums.map(a => a[0])) + '–' + Math.max(...nums.map(a => a[a.length - 1]));
   }
 
   /* ---------------- презентація ---------------- */
   async function renderSlides(id, lid) {
     const meta = catalogSubject(id);
-    if (user.role === 'student' && meta.cls !== user.cls) { location.hash = '#/'; return; }
+    if (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) { location.hash = '#/'; return; }
     const course = await loadCourse(id);
     if (course.primary) document.body.classList.add('theme-primary');
     const lesson = course.sections.flatMap(s => s.lessons).find(l => l.id === lid);
@@ -306,14 +331,16 @@
     view = Slides.run($app, lesson, {
       color: lesson.section.color || meta.color,
       testHref: `#/test/${id}/lesson/${lid}`,
-      crumbs: `<a href="#/course/${id}">${esc(meta.name)} · ${meta.cls} клас</a><span>›</span><span>${esc(lesson.section.title)}</span>`
+      crumbs: `<a href="#/course/${id}">${esc(meta.name)} · ${meta.cls} клас</a><span>›</span><span>${esc(lesson.section.title)}</span>`,
+      source: sourceNote(course, lesson.pages),
+      sourceText: bookLine(course) + (lesson.pages ? ', с. ' + esc(lesson.pages) : '')
     });
   }
 
   /* ---------------- тест ---------------- */
   async function renderTest(id, kind, key) {
     const meta = catalogSubject(id);
-    if (user.role === 'student' && meta.cls !== user.cls) { location.hash = '#/'; return; }
+    if (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) { location.hash = '#/'; return; }
     const course = await loadCourse(id);
     if (course.primary) document.body.classList.add('theme-primary');
     const all = course.sections.flatMap(s => s.lessons);
@@ -327,6 +354,8 @@
     } else {
       pool = all.flatMap(l => l.questions); count = C.finalQuestions; title = 'Річний підсумковий тест'; testId = 'final'; kind = 'final';
     }
+    const srcPages = kind === 'lesson' ? all.find(x => x.id === key).pages
+      : kind === 'section' ? pagesRange(course.sections.find(x => x.n === +key).lessons) : pagesRange(all);
     if (user.role === 'student') {
       const mine = (await Store.myResults()).filter(r => r.course === id && r.testId === testId && r.passed);
       if (mine.length) {
@@ -349,6 +378,7 @@
         questions: TestEngine.pick(pool, Math.min(count, pool.length)),
         backHref: '#/course/' + id,
         crumbs: `<a href="#/course/${id}">${esc(meta.name)} · ${meta.cls} клас</a><span>›</span><span>Тест</span>`,
+        source: sourceNote(course, srcPages),
         meta: { course: id, cls: user.cls || null, name: user.name, kind, testId, lessonId, sectionN, title },
         onSave: r => user.role === 'student' ? Store.saveResult(r) : Promise.resolve(),
         onRestart: () => { start(); window.scrollTo(0, 0); }
@@ -504,12 +534,14 @@
     const ready = CATALOG.flatMap(k => k.subjects.filter(s => s.ready).map(s => ({ cls: k.cls, s })));
     const cls = +(clsArg || ss.getItem('rsCls') || (ready[0] && ready[0].cls) || 2);
     const k = classInfo(cls);
-    const subj = (k && k.subjects.find(s => s.id === courseArg)) || (k && k.subjects.find(s => s.ready));
+    let subj = (k && k.subjects.find(s => s.id === courseArg)) || null;
+    if (!subj && k && courseArg) { const m = catalogSubject(courseArg); if (m && m.archived && m.cls === cls) subj = m; }
+    if (!subj && k) subj = k.subjects.find(s => s.ready);
     ss.setItem('rsCls', cls);
     const head = `<div class="page-head"><div><h1>Результати</h1><p>Найкращі зараховані оцінки кожного учня</p></div></div>
       <div class="toolbar">
         <select class="input" id="rCls">${CATALOG.map(c => `<option value="${c.cls}" ${c.cls === cls ? 'selected' : ''}>${c.cls} клас</option>`).join('')}</select>
-        <select class="input" id="rSub">${(k ? k.subjects : []).map(s => `<option value="${s.id}" ${subj && s.id === subj.id ? 'selected' : ''} ${s.ready ? '' : 'disabled'}>${esc(s.name)}${s.ready ? '' : ' (готується)'}</option>`).join('')}</select>
+        <select class="input" id="rSub">${(k ? k.subjects : []).map(s => `<option value="${s.id}" ${subj && s.id === subj.id ? 'selected' : ''} ${s.ready ? '' : 'disabled'}>${esc(s.name)}${s.ready ? '' : ' (готується)'}</option>` + (s.archive || []).map(a => `<option value="${a.course}" ${subj && a.course === subj.id ? 'selected' : ''}>${esc(s.name)} — архів: ${esc(a.label || a.course)}</option>`).join('')).join('')}</select>
         <span id="rTools"></span>
       </div>`;
     $app.innerHTML = head + '<div class="loader"><span></span></div>';

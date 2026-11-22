@@ -1,12 +1,16 @@
 /* Каталог класів і предметів.
    id предмета = назва файлу курсу в data/courses/<id>.js
-   ready:true — курс уже наповнено; інакше учні бачать «Готуємо». */
+   ready:true — курс уже наповнено; інакше учні бачать «Готуємо».
+   НОВЕ ВИДАННЯ ПІДРУЧНИКА (див. README):
+     course: 'informatics2_2026'               — id нового курсу (файл data/courses/informatics2_2026.js)
+     archive: [{ course: 'informatics2', label: 'видання 2024' }] — старі видання; їхні результати
+                                                  вчитель і далі бачить у «Результатах». */
 window.CATALOG = [
   { cls: 2, color: '#FF7A59', subjects: [
-    { id: 'informatics2', name: 'Інформатика', book: '«Я досліджую світ», Н. Морзе та ін., 2025', icon: '💻', ready: true }
+    { id: 'informatics2', name: 'Інформатика', icon: '💻', ready: true }
   ]},
   { cls: 3, color: '#FFB020', subjects: [
-    { id: 'informatics3', name: 'Інформатика', icon: '💻' }
+    { id: 'informatics3', name: 'Інформатика', icon: '💻', ready: true }
   ]},
   { cls: 4, color: '#2BB673', subjects: [
     { id: 'informatics4', name: 'Інформатика', icon: '💻' }

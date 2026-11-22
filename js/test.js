@@ -73,6 +73,7 @@
         <span class="tag">${n} питань</span>
         <div class="timer" id="tTimer"><div class="timer-ring" id="tRing"></div><span id="tTime">${fmt(total)}</span></div>
       </div>
+      ${opts.source || ''}
       <div id="tBody"></div>`;
     const body = root.querySelector('#tBody');
     const elTime = root.querySelector('#tTime'), elRing = root.querySelector('#tRing'), elTimer = root.querySelector('#tTimer');

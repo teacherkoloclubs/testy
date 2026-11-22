@@ -382,3 +382,13 @@ h1, h2, h3 { overflow-wrap: break-word; }
 .st-todo { background: #FFF4DE; color: #B54708; }
 .done-btn { background: var(--ok-bg) !important; color: var(--ok) !important; cursor: default; box-shadow: none !important; transform: none !important; }
 @media (prefers-reduced-motion: reduce) { .rem-emoji, .cover-emoji { animation: none; } }
+
+.logout-btn { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-radius: 12px; background: #F0EEFB; font-weight: 800; font-size: 14px; color: var(--ink-2); }
+.logout-btn:hover { background: #FEECEB; color: var(--bad); }
+@media (max-width: 640px) { .logout-btn span { display: none; } .logout-btn { padding: 0 10px; } }
+
+/* ---------- джерело (підручник) ---------- */
+.source-note { display: flex; gap: 10px; align-items: flex-start; margin: -6px 0 18px; padding: 10px 14px; border-radius: 14px; background: rgba(255,255,255,.75); border: 1px dashed #CFC8F5; font-size: 14px; font-weight: 700; color: var(--ink-2); line-height: 1.45; }
+.slides-shell .source-note { margin: 14px 0 0; }
+.slide.s-source { background: linear-gradient(135deg, #F4F2FF, #fff); text-align: center; align-items: center; }
+.slide.s-source .src-text { font-size: 1.05em; font-weight: 800; color: var(--ink); max-width: 34em; }
