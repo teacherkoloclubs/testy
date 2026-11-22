@@ -21,7 +21,7 @@ window.APP_CONFIG = {
 
   /* 2) Пошта (або кілька) облікового запису вчителя.
         Такий самий список має бути у файлі firestore.rules */
-  teacherEmails: ['teacher@example.com'], // ← ЗАМІНІТЬ на пошту вчителя з Firebase → Authentication → Users
+  teacherEmails: ['teacher.kolo.clubs@gmail.com'],
 
   /* Учні входять за логіном; технічно логін перетворюється на адресу
      login@<цей домен>. Справжня пошта не потрібна. Не змінюйте після

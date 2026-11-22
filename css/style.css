@@ -351,7 +351,7 @@ body.hidden-content .app { filter: blur(18px); }
 }
 
 /* ---------- переноси довгих назв ---------- */
-h1, h2, h3, .lesson-row h3, .subject-tile h3 { overflow-wrap: break-word; hyphens: auto; }
+h1, h2, h3 { overflow-wrap: break-word; }
 .subject-tile .st-body, .lesson-row > div, .rem-item .ri-text { min-width: 0; }
 .subject-tile h3 { font-size: clamp(16px, 2.2vw, 19px); line-height: 1.25; }
 .st-sub { display: block; font-weight: 700; font-size: 14px; margin-top: 4px; }

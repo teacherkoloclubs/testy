@@ -1,13 +1,13 @@
 rules_version = '2';
 // Правила безпеки бази даних. Вставте цей текст у Firebase Console →
 // Firestore Database → Rules і натисніть Publish.
-// ВАЖЛИВО: замініть teacher@example.com на свою пошту (ту саму, що в js/config.js).
+// Пошта вчителя має збігатися з js/config.js.
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
     function isTeacher() {
-      return signedIn() && request.auth.token.email in ['teacher@example.com'];
+      return signedIn() && request.auth.token.email in ['teacher.kolo.clubs@gmail.com'];
     }
 
     // Профілі учнів: створює і змінює лише вчитель; учень бачить тільки свій
