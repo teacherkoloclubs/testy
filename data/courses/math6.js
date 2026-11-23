@@ -17,5 +17,6 @@ window.COURSES.math6 = {
     approval: 'Рекомендовано Міністерством освіти і науки України (наказ МОН від 08.03.2023 № 254).'
   },
   parts: ['math6/s1.js', 'math6/s2.js', 'math6/s3.js', 'math6/s4.js', 'math6/s5.js'],
+  ext: ['math6/x1.js', 'math6/x2.js'],
   sections: []
 };

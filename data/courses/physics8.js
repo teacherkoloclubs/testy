@@ -17,5 +17,6 @@ window.COURSES.physics8 = {
     approval: 'Рекомендовано Міністерством освіти і науки України (наказ МОН від 22.02.2021 № 243).'
   },
   parts: ['physics8/s1.js', 'physics8/s2.js', 'physics8/s3.js', 'physics8/s4.js', 'physics8/s5.js'],
+  ext: ['physics8/x1.js', 'physics8/x2.js'],
   sections: []
 };

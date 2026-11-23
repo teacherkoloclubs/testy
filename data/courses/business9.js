@@ -17,5 +17,6 @@ window.COURSES.business9 = {
     approval: 'Рекомендовано Міністерством освіти і науки України (наказ МОН від 27.01.2026 № 110).'
   },
   parts: ['business9/s1.js', 'business9/s2.js', 'business9/s3.js', 'business9/s4.js', 'business9/s5.js'],
+  ext: ['business9/x1.js', 'business9/x2.js'],
   sections: []
 };

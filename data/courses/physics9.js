@@ -17,5 +17,6 @@ window.COURSES.physics9 = {
     approval: 'Рекомендовано Міністерством освіти і науки України (наказ МОН від 27.01.2026 № 110).'
   },
   parts: ['physics9/s1.js', 'physics9/s2.js', 'physics9/s3.js', 'physics9/s4.js', 'physics9/s5.js'],
+  ext: ['physics9/x1.js', 'physics9/x2.js'],
   sections: []
 };

@@ -17,5 +17,6 @@ window.COURSES.physics7 = {
     approval: 'Рекомендовано Міністерством освіти і науки України (наказ МОН від 05.02.2024 № 124).'
   },
   parts: ['physics7/s1.js', 'physics7/s2.js', 'physics7/s3.js', 'physics7/s4.js', 'physics7/s5.js', 'physics7/s6.js', 'physics7/s7.js', 'physics7/s8.js'],
+  ext: ['physics7/x1.js', 'physics7/x2.js'],
   sections: []
 };

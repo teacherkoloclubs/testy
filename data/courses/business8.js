@@ -17,5 +17,6 @@ window.COURSES.business8 = {
     approval: 'Рекомендовано Міністерством освіти і науки України (наказ МОН від 21.02.2025 № 347).'
   },
   parts: ['business8/s1.js', 'business8/s2.js', 'business8/s3.js', 'business8/s4.js'],
+  ext: ['business8/x1.js'],
   sections: []
 };

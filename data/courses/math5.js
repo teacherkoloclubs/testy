@@ -17,5 +17,6 @@ window.COURSES.math5 = {
     approval: 'Рекомендовано Міністерством освіти і науки України.'
   },
   parts: ['math5/s1.js', 'math5/s2.js', 'math5/s3.js', 'math5/s4.js', 'math5/s5.js'],
+  ext: ['math5/x1.js', 'math5/x2.js'],
   sections: []
 };
