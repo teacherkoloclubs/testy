@@ -670,28 +670,3 @@ h1, h2, h3 { overflow-wrap: break-word; }
 .rs-grid { align-items: start; }
 .cs-tbl { min-width: 0 !important; width: 100%; }
 .cs-tbl td:last-child { width: 1%; }
-
-/* ===================== Шкільний розклад ===================== */
-.sched-hint { font-weight: 700; color: var(--ink-2); margin-bottom: 18px; }
-.my-lessons { margin-bottom: 22px; border-left: 6px solid var(--brand); }
-.ml-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-.ml-head h2 { font-size: 20px; } .ml-head .muted { font-weight: 800; font-size: 14px; }
-.ml-row { display: flex; align-items: center; gap: 12px; padding: 10px 6px; border-top: 1px solid var(--line); }
-.ml-row.past { opacity: .55; }
-.ml-slot { display: flex; flex-direction: column; align-items: center; min-width: 64px; }
-.ml-slot b { width: 34px; height: 34px; border-radius: 10px; background: var(--brand); color: #fff; display: grid; place-items: center; font-family: var(--font-head); font-size: 18px; }
-.ml-slot small { font-size: 11px; font-weight: 800; color: var(--muted); margin-top: 2px; }
-.ml-body { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.ml-body small { font-weight: 700; color: var(--ink-2); }
-.ml-acts { display: flex; gap: 6px; }
-.date-badge { display: inline-block; font-size: 12px; font-weight: 800; padding: 2px 8px; border-radius: 8px; background: #EEF2FF; color: #3B4CCA; margin-left: 4px; }
-.date-badge.past { background: #F1F0F7; color: var(--muted); }
-.date-badge.warn { background: var(--bad-bg); color: var(--bad); }
-.rem-item.overdue { border-color: #FFB4A9; background: #FFF4F2; }
-.sched-steps ol { margin: 0 0 10px 20px; font-weight: 700; line-height: 1.6; }
-.input.sm { padding: 6px 10px; font-size: 14px; min-width: 200px; }
-.ov-card { margin-bottom: 14px; }
-.ov-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
-.ov-head h3 { font-size: 17px; } .ov-head .muted { font-weight: 700; font-size: 14px; flex: 1; }
-.stu-pick { display: grid; gap: 10px; max-height: 50vh; overflow: auto; }
-@media (max-width: 640px) { .ml-row { flex-wrap: wrap; } .ml-acts { width: 100%; padding-left: 76px; } }
