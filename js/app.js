@@ -62,10 +62,13 @@
   const AVAILABLE = window.AVAILABLE_COURSES || [];
   const courseExists = id => AVAILABLE.some(c => c.id === id);
   const BASE_CATALOG = JSON.parse(JSON.stringify(CATALOG));
+  /* стримана палітра класів: від індиго (1 клас) до блакитного (11 клас) */
+  const CLASS_TONES = ['#4F46E5', '#4A50E8', '#4459EA', '#3B63EB', '#2F6FEA', '#2479E6', '#1784DF', '#0E8FD6', '#0A99CC', '#0AA2C2', '#0EA5B8'];
+  function classColor(c) { return CLASS_TONES[Math.max(0, Math.min(CLASS_TONES.length - 1, (+c || 1) - 1))]; }
   function applyCatalog(classes) {
     CATALOG.length = 0;
     classes.slice().sort((a, b) => a.cls - b.cls).forEach(k => CATALOG.push({
-      cls: Number(k.cls), color: k.color || '#5B4BF5',
+      cls: Number(k.cls), color: classColor(k.cls),
       subjects: (k.subjects || []).map(s0 => {
         const s = Object.assign({}, s0);
         s.key = s.key || s.id;
@@ -422,7 +425,7 @@
     if (!lesson) throw new Error('Урок не знайдено');
     Protect.set(true, user.role === 'student');
     view = Slides.run($app, lesson, {
-      color: lesson.section.color || meta.color,
+      color: meta.color,
       testHref: `#/test/${id}/lesson/${lid}`,
       crumbs: `<a href="#/course/${id}">${esc(meta.name)} · ${meta.cls} клас</a><span>›</span><span>${esc(lesson.section.title)}</span>`,
       source: sourceNote(course, lesson.pages),
@@ -920,16 +923,28 @@
     bindStudentLinks(D, box);
   }
 
+  /* спроби, згруповані за днями: компактна таблиця без горизонтальної прокрутки */
   function attemptsTable(D, list, withDel, noStudent) {
     if (!list.length) return '<div class="empty" style="padding:20px">Спроб ще немає</div>';
-    return `<div class="table-wrap"><table class="tbl"><thead><tr><th>Дата</th>${noStudent ? '' : '<th>Учень</th>'}<th>Предмет</th><th>Тест</th><th class="c">Оцінка</th><th class="c">Правильно</th><th class="c">Час</th><th class="c" title="Скільки разів учень виходив з вікна тесту">Виходи</th>${withDel ? '<th></th>' : ''}</tr></thead><tbody>
-      ${list.map(r => { const s = D.stuById[r.uid]; return `<tr><td>${fmtDate(r.atMs)}</td>
-        ${noStudent ? '' : `<td>${s ? `<a href="javascript:void(0)" data-st="${s.uid}" style="font-weight:800">${esc(s.name)}</a>` : `${esc(r.name || '—')} <small class="muted">(видалений)</small>`}</td>`}
-        <td>${subLabel(D.subById[r.course])}</td><td><small class="muted">${KIND[r.kind] || ''}</small> ${esc(r.title)}</td>
-        <td class="c"><span class="cell ${r.passed ? gradeClass(r.score) : 'g-lo'}" title="${r.passed ? 'Зараховано' : 'Не зараховано'}">${r.score}${r.passed ? '' : ' ✕'}</span></td>
-        <td class="c">${r.full}/${r.total}</td><td class="c">${fmtDur(r.durationSec || 0)}${r.auto ? ' ⌛' : ''}</td><td class="c">${r.leaves || 0}</td>
-        ${withDel ? `<td><button class="btn danger sm" data-rdel="${esc(r.id)}" title="Видалити спробу (учень зможе пройти тест ще раз)">✕</button></td>` : ''}</tr>`; }).join('')}
-      </tbody></table></div>`;
+    const dayKey = ms => { const d = new Date(ms || 0); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); };
+    const dayLabel = ms => { const d = new Date(ms || 0), t = new Date(); t.setHours(0, 0, 0, 0); const diff = Math.round((t - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / DAY);
+      const base = d.toLocaleDateString('uk-UA', { weekday: 'long', day: 'numeric', month: 'long' }); return diff === 0 ? 'Сьогодні, ' + base : diff === 1 ? 'Вчора, ' + base : base; };
+    const time = ms => new Date(ms || 0).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+    let prev = '', html = '';
+    const cols = 5 + (noStudent ? 0 : 1) + (withDel ? 1 : 0);
+    list.forEach(r => {
+      const k = dayKey(r.atMs);
+      if (k !== prev) { html += `<tr class="day-row"><td colspan="${cols}">${dayLabel(r.atMs)}</td></tr>`; prev = k; }
+      const s = D.stuById[r.uid], x = D.subById[r.course];
+      html += `<tr><td class="t-time">${time(r.atMs)}</td>
+        ${noStudent ? '' : `<td class="t-name">${s ? `<a href="javascript:void(0)" data-st="${s.uid}">${esc(s.name)}</a><small>${s.cls} кл.</small>` : `${esc(r.name || '—')}<small>видалений</small>`}</td>`}
+        <td class="t-test"><span>${esc(r.title)}</span><small>${x ? esc(x.icon) + ' ' + esc(x.name) + ' · ' + x.cls + ' кл.' : ''} · ${KIND[r.kind] || ''}</small></td>
+        <td class="c"><span class="cell ${r.passed ? gradeClass(r.score) : 'g-lo'}" title="${r.passed ? 'Зараховано' : 'Не зараховано'}">${r.score}${r.passed ? '' : '✕'}</span></td>
+        <td class="c t-meta"><b>${r.full}/${r.total}</b><small>правильно</small></td>
+        <td class="c t-meta"><b>${fmtDur(r.durationSec || 0)}${r.auto ? ' ⌛' : ''}</b><small>${r.leaves ? '⚠️ виходів: ' + r.leaves : 'без виходів'}</small></td>
+        ${withDel ? `<td class="c"><button class="icon-btn adm-del" data-rdel="${esc(r.id)}" title="Видалити спробу (учень зможе пройти тест ще раз)">✕</button></td>` : ''}</tr>`;
+    });
+    return `<div class="table-wrap"><table class="tbl tbl-compact tbl-att"><tbody>${html}</tbody></table></div>`;
   }
   function bindStudentLinks(D, box) {
     box.querySelectorAll('[data-st]').forEach(el => el.onclick = () => studentProfile(D, D.stuById[el.dataset.st]));
@@ -985,14 +1000,18 @@
   /* ---- за предметами ---- */
   function rsSubjects(D, box) {
     const rows = D.subs.map(x => subjectRow(D, x));
-    box.innerHTML = `<div class="card table-wrap"><table class="tbl"><thead><tr><th>Предмет</th><th class="c">Учнів</th><th class="c">Проходили</th><th class="c">Середній бал</th><th class="c">Зараховано спроб</th><th style="min-width:150px">Пройдено уроків</th><th>Рівні</th><th class="c">Остання спроба</th><th></th></tr></thead><tbody>
-      ${rows.map(r => `<tr><td style="font-weight:800">${subLabel(r.x)}</td><td class="c">${r.students}</td><td class="c">${r.active}</td>
-        <td class="c"><span class="cell ${gradeClass(r.avg)}">${r.avg ?? '—'}</span></td><td class="c">${r.passRate == null ? '—' : r.passRate + '%'}</td><td>${doneBar(r.done)}</td>
-        <td style="min-width:160px">${r.scores.length ? `<div class="lvl-bar sm">${LEVELS.map(([nm, lo, hi, cl]) => { const c = r.scores.filter(v => v >= lo && v <= hi).length; return c ? `<i class="${cl}" style="flex:${c}" title="${nm}: ${c}"></i>` : ''; }).join('')}</div>` : '<span class="muted">—</span>'}</td>
-        <td class="c">${r.last ? ago(r.last) : '—'}</td>
-        <td><button class="btn light sm" data-sub="${r.x.id}">Детально</button> <a class="btn light sm" href="#/teacher/results/journal/${r.x.cls}/${r.x.id}" title="Журнал класу">📒</a></td></tr>`).join('')}
-      </tbody></table></div>
-      <p class="muted rs-sum">«Проходили» — учні з хоча б однією спробою. «Пройдено уроків» — частка зарахованих тестів за уроки від усіх можливих.</p>`;
+    const byCls = [...new Set(rows.map(r => r.x.cls))].sort((a, b) => a - b);
+    box.innerHTML = byCls.map(c => `<h3 class="grp-h"><span class="sp-cnum">${c}</span>${c} клас</h3>
+      <div class="sub-cards">${rows.filter(r => r.x.cls === c).map(r => `
+        <div class="card sub-card">
+          <div class="sb-top"><span class="sb-ico">${esc(r.x.icon)}</span><div class="sb-name"><b>${esc(r.x.name)}</b><small>${r.active}/${r.students} учнів проходили · ${r.last ? ago(r.last) : 'спроб ще немає'}</small></div>
+            <span class="cell ${gradeClass(r.avg)} sb-avg" title="Середній бал">${r.avg ?? '—'}</span></div>
+          ${doneBar(r.done)}
+          <div class="sb-lvl">${r.scores.length ? `<div class="lvl-bar sm">${LEVELS.map(([nm, lo, hi, cl]) => { const n = r.scores.filter(v => v >= lo && v <= hi).length; return n ? `<i class="${cl}" style="flex:${n}" title="${nm}: ${n}"></i>` : ''; }).join('')}</div>` : ''}
+            <small class="muted">${r.passRate == null ? 'Спроб ще немає' : `Зараховано ${r.passRate}% спроб · усього ${r.attempts}`}</small></div>
+          <div class="sb-foot"><button class="btn light sm" data-sub="${r.x.id}">📈 Детально</button><a class="btn light sm" href="#/teacher/results/journal/${r.x.cls}/${r.x.id}">📒 Журнал</a></div>
+        </div>`).join('')}</div>`).join('') +
+      `<p class="muted rs-sum">Смужка — частка зарахованих тестів за уроки від усіх можливих; кольорова шкала — рівні досягнень.</p>`;
     box.querySelectorAll('[data-sub]').forEach(bt => bt.onclick = () => subjectDetail(D, D.subById[bt.dataset.sub]));
   }
   function subjectDetail(D, x) {
@@ -1062,10 +1081,10 @@
     const draw = () => {
       const l = list();
       box.querySelector('#stOut').innerHTML = `<p class="muted rs-sum">Учнів: <b>${l.length}</b> · потребують уваги: <b>${l.filter(r => r.flags.length).length}</b></p>
-        <div class="card table-wrap" style="max-height:70vh"><table class="tbl"><thead><tr><th class="sticky-col">Учень</th><th class="c">Клас</th><th class="c">Середній</th><th class="c">Тестів зарах.</th><th style="min-width:140px">Пройдено уроків</th><th class="c">Спроб</th><th class="c">Останній вхід</th><th>Сигнали</th></tr></thead><tbody>
-        ${l.map(r => `<tr><td class="sticky-col"><a href="javascript:void(0)" data-st="${r.s.uid}" style="font-weight:900">${esc(r.s.name)}</a></td><td class="c">${r.s.cls}</td>
-          <td class="c"><span class="cell ${gradeClass(r.avg)}">${r.avg ?? '—'}</span></td><td class="c">${r.passed}</td><td>${doneBar(r.done)}</td><td class="c">${r.attempts}</td>
-          <td class="c">${ago(r.last)}</td><td>${r.flags.length ? `<small class="flag">⚠️ ${r.flags.map(esc).join(', ')}</small>` : '<small class="muted">—</small>'}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">Нікого не знайдено</td></tr>'}
+        <div class="card table-wrap" style="max-height:72vh"><table class="tbl tbl-compact rs-stu-tbl"><thead><tr><th>Учень</th><th class="c">Середній</th><th style="width:26%">Пройдено уроків</th><th class="c">Тести · спроби</th><th class="c">Останній вхід</th></tr></thead><tbody>
+        ${l.map(r => `<tr><td class="t-name"><a href="javascript:void(0)" data-st="${r.s.uid}">${esc(r.s.name)}</a><small>${r.s.cls} клас</small>${r.flags.length ? `<small class="flag">⚠️ ${r.flags.map(esc).join(' · ')}</small>` : ''}</td>
+          <td class="c"><span class="cell ${gradeClass(r.avg)}">${r.avg ?? '—'}</span></td><td>${doneBar(r.done)}</td><td class="c t-meta"><b>${r.passed}</b><small>${r.attempts} спроб</small></td>
+          <td class="c t-meta"><b>${ago(r.last)}</b></td></tr>`).join('') || '<tr><td colspan="5" class="empty">Нікого не знайдено</td></tr>'}
         </tbody></table></div>`;
       bindStudentLinks(D, box.querySelector('#stOut'));
     };
@@ -1145,6 +1164,9 @@
       const sb = course.sections.map(x => bm['section-' + x.n] && bm['section-' + x.n].best).filter(v => v != null);
       return { s, bm, lessonAvg: avg(lb), lessonDone: lb.length, sectionAvg: avg(sb), final: bm.final && bm.final.best, attempts: (byUser[s.uid] || []).length };
     });
+    /* вигляд журналу: «огляд» (по розділах) або окремий розділ — без горизонтальної прокрутки */
+    let jv = ss.getItem('jView:' + subj.id) || 'all';
+    if (jv !== 'all' && !course.sections.some(x => 'sec' + x.n === jv)) jv = 'all';
     const cell = e => {
       if (!e) return `<span class="cell none">·</span>`;
       if (e.best != null) return `<span class="cell ${gradeClass(e.best)}" title="Спроб: ${e.attempts}">${e.best}</span>`;
@@ -1158,18 +1180,27 @@
         <div class="card stat-tile"><div class="v">${results.filter(r => list.some(s => s.uid === r.uid)).length}</div><div class="k">Усього спроб</div></div>
         <div class="card stat-tile"><div class="v">${rowsData.filter(r => r.final != null).length}</div><div class="k">Склали річний тест</div></div>
       </div>
-      ${list.length ? `<div class="card table-wrap" style="max-height:70vh"><table class="tbl">
-        <thead><tr><th class="sticky-col">Учень</th><th class="c">Середній<br>(уроки)</th><th class="c">Тестів<br>зарах.</th><th class="c">Середній<br>(розділи)</th>
-          ${cols.map(c => `<th class="c vert" title="${esc(c.label)}" style="${c.kind !== 'lesson' ? 'background:#FFF4DE' : ''}">${esc(c.short)} ${c.kind === 'lesson' ? '' : '★'}</th>`).join('')}</tr></thead>
+      ${list.length ? `<div class="fchips j-tabs"><button class="fchip ${jv === 'all' ? 'on' : ''}" data-jv="all">📊 Огляд за розділами</button>${course.sections.map(x => `<button class="fchip ${jv === 'sec' + x.n ? 'on' : ''}" data-jv="sec${x.n}" title="${esc(x.title)}">Розділ ${x.n}</button>`).join('')}</div>
+        <div class="card table-wrap j-wrap">${jv === 'all' ? `<table class="tbl tbl-compact">
+        <thead><tr><th class="sticky-col">Учень</th><th class="c">Середній</th><th class="c">Уроки</th>
+          ${course.sections.map(x => `<th class="c j-secol" title="${esc(x.title)}">Р${x.n}<small class="th-sub">уроки · підс.</small></th>`).join('')}<th class="c">Річний</th></tr></thead>
         <tbody>${rowsData.map(r => `<tr>
-          <td class="sticky-col"><a href="javascript:void(0)" data-st="${r.s.uid}" style="font-weight:900">${esc(r.s.name)}</a></td>
+          <td class="sticky-col nm"><a href="javascript:void(0)" data-st="${r.s.uid}">${esc(r.s.name)}</a></td>
           <td class="c"><span class="cell ${gradeClass(r.lessonAvg)}">${r.lessonAvg ?? '—'}</span></td>
-          <td class="c">${r.lessonDone}/${lessons.length}</td>
-          <td class="c"><span class="cell ${gradeClass(r.sectionAvg)}">${r.sectionAvg ?? '—'}</span></td>
-          ${cols.map(c => `<td class="c">${cell(r.bm[c.id])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
-        <p class="muted" style="margin-top:10px;font-size:14px;font-weight:700">У — тест за урок, Р — підсумковий за розділ, ★ — підсумкові. ✕ — спроби були, але тест не зараховано. Натисніть на ім’я, щоб побачити всі спроби.</p>`
+          <td class="c"><small class="j-done">${r.lessonDone}/${lessons.length}</small></td>
+          ${course.sections.map(x => { const sb = x.lessons.map(l => r.bm[l.id] && r.bm[l.id].best).filter(v => v != null); const a = avg(sb);
+            return `<td class="c j-secol"><span class="j-pair"><span class="cell sm ${gradeClass(a)}" title="Середній за уроки розділу: ${sb.length} з ${x.lessons.length}">${a ?? '·'}</span>${cell(r.bm['section-' + x.n])}</span></td>`; }).join('')}
+          <td class="c">${cell(r.bm.final)}</td></tr>`).join('')}</tbody></table>`
+        : (() => { const sec = course.sections.find(x => 'sec' + x.n === jv); const sc = sec.lessons.map(l => ({ id: l.id, short: 'У' + l.n, label: l.n + '. ' + l.title })).concat([{ id: 'section-' + sec.n, short: 'Підс.', label: 'Підсумковий за розділ ' + sec.n, sum: true }]);
+          return `<div class="j-sec-title">Розділ ${sec.n}. ${esc(sec.title)}</div><table class="tbl tbl-compact j-sec-tbl">
+          <thead><tr><th class="sticky-col">Учень</th>${sc.map(c => `<th class="c ${c.sum ? 'th-sum' : ''}" title="${esc(c.label)}">${esc(c.short)}</th>`).join('')}<th class="c">Сер.</th></tr></thead>
+          <tbody>${rowsData.map(r => { const sb = sec.lessons.map(l => r.bm[l.id] && r.bm[l.id].best).filter(v => v != null);
+            return `<tr><td class="sticky-col nm"><a href="javascript:void(0)" data-st="${r.s.uid}">${esc(r.s.name)}</a></td>${sc.map(c => `<td class="c">${cell(r.bm[c.id])}</td>`).join('')}<td class="c"><span class="cell ${gradeClass(avg(sb))}">${avg(sb) ?? '—'}</span></td></tr>`; }).join('')}</tbody></table>
+          <div class="j-legend">${sc.filter(c => !c.sum).map(c => `<span><b>${esc(c.short)}</b> ${esc(c.label.replace(/^\d+\.\s*/, ''))}</span>`).join('')}</div>`; })()}</div>
+        <p class="muted" style="margin-top:10px;font-size:13.5px;font-weight:700">${jv === 'all' ? 'У кожному розділі: ліворуч — середній бал за тести уроків, праворуч — підсумковий тест розділу. ' : ''}✕ — спроби були, але тест не зараховано. Натисніть на ім’я учня, щоб побачити всі спроби.</p>`
         : `<div class="card empty"><span class="e">🧑‍🎓</span>У ${cls} класі ще немає учнів. <a href="#/teacher/students">Додати учнів</a></div>`}`;
     bind();
+    $app.querySelectorAll('[data-jv]').forEach(b => b.onclick = () => { ss.setItem('jView:' + subj.id, b.dataset.jv); renderJournal(clsArg, courseArg, tabsHtml); });
     $app.querySelector('#rTools').innerHTML = list.length ? `<button class="btn light sm" id="csv">⬇️ Експорт у CSV (Excel)</button>` : '';
     const csvBtn = $app.querySelector('#csv');
     if (csvBtn) csvBtn.onclick = () => {
@@ -1394,6 +1425,7 @@
   function renderSubjectsAdmin() {
     let draft = exportCatalog();
     let dirty = false;
+    const openCls = new Set();
     const COLORS = ['#FF7A59', '#FFB020', '#2BB673', '#14B8C4', '#3B82F6', '#6366F1', '#A855F7', '#EC4899', '#F43F5E', '#0EA5E9', '#84CC16'];
     const courseOpts = sel => `<option value="">— матеріали готуються —</option>` +
       AVAILABLE.map(c => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${esc(c.title)}</option>`).join('');
@@ -1412,29 +1444,33 @@
           Нові матеріали за PDF підручника готує Claude — після цього вони з’являться в списку.
           Якщо видалити предмет, результати учнів у базі не зникають: поверніть предмет із тими самими матеріалами — і оцінки знову буде видно.
         </div>
-        ${draft.map((k, ki) => `
-          <div class="card pad adm-class" style="--c:${esc(k.color)}">
-            <div class="adm-head">
-              <span class="adm-num">${k.cls}</span><h2>${k.cls} клас</h2>
-              <label class="adm-color" title="Колір класу"><input type="color" value="${esc(k.color)}" data-k="${ki}" data-f="color"></label>
-              <button class="btn danger sm" data-delcls="${ki}">🗑 Видалити клас</button>
-            </div>
+        <div class="adm-tools"><button class="btn light sm" id="admOpenAll">Розгорнути всі</button><button class="btn light sm" id="admCloseAll">Згорнути всі</button></div>
+        <div class="adm-grid">${draft.map((k, ki) => `
+          <details class="card adm-class" data-ki="${ki}" ${openCls.has(k.cls) ? 'open' : ''}>
+            <summary class="adm-head">
+              <span class="adm-num">${k.cls}</span>
+              <span class="adm-title"><b>${k.cls} клас</b><small>${k.subjects.length ? k.subjects.map(sj => esc(sj.icon) + ' ' + esc(sj.name)).join(' · ') : 'предметів немає'}</small></span>
+              <span class="tag">${k.subjects.length}</span>
+            </summary>
             <div class="adm-list">
               ${k.subjects.length ? k.subjects.map((sj, si) => `
                 <div class="adm-row ${sj.hidden ? 'is-hidden' : ''}">
                   <input class="input adm-icon" value="${esc(sj.icon)}" maxlength="4" data-k="${ki}" data-s="${si}" data-f="icon" title="Значок (емодзі)">
-                  <input class="input" value="${esc(sj.name)}" placeholder="Назва предмета" data-k="${ki}" data-s="${si}" data-f="name">
-                  <select class="input" data-k="${ki}" data-s="${si}" data-f="course" title="Матеріали">${courseOpts(sj.course)}</select>
-                  <label class="adm-check"><input type="checkbox" ${sj.hidden ? 'checked' : ''} data-k="${ki}" data-s="${si}" data-f="hidden"> Приховати</label>
+                  <input class="input adm-name" value="${esc(sj.name)}" placeholder="Назва предмета" data-k="${ki}" data-s="${si}" data-f="name">
                   <span class="adm-btns">
                     <button class="icon-btn" data-mv="${ki}:${si}:-1" title="Вище" ${si === 0 ? 'disabled' : ''}>↑</button>
                     <button class="icon-btn" data-mv="${ki}:${si}:1" title="Нижче" ${si === k.subjects.length - 1 ? 'disabled' : ''}>↓</button>
                     <button class="icon-btn adm-del" data-delsub="${ki}:${si}" title="Видалити предмет">🗑</button>
                   </span>
+                  <select class="input adm-course" data-k="${ki}" data-s="${si}" data-f="course" title="Матеріали">${courseOpts(sj.course)}</select>
+                  <label class="adm-check" title="Учні не бачитимуть предмет"><input type="checkbox" ${sj.hidden ? 'checked' : ''} data-k="${ki}" data-s="${si}" data-f="hidden"> Приховати</label>
                 </div>`).join('') : '<p class="muted" style="font-weight:700">Предметів ще немає</p>'}
             </div>
-            <button class="btn light sm" data-addsub="${ki}" style="margin-top:12px">＋ Додати предмет</button>
-          </div>`).join('')}`;
+            <div class="adm-foot"><button class="btn light sm" data-addsub="${ki}">＋ Додати предмет</button><button class="btn danger sm" data-delcls="${ki}">🗑 Видалити клас</button></div>
+          </details>`).join('')}</div>`;
+      $app.querySelectorAll('details.adm-class').forEach(d => d.addEventListener('toggle', () => { const c = draft[+d.dataset.ki].cls; d.open ? openCls.add(c) : openCls.delete(c); }));
+      $app.querySelector('#admOpenAll').onclick = () => { draft.forEach(k => openCls.add(k.cls)); $app.querySelectorAll('details.adm-class').forEach(d => (d.open = true)); };
+      $app.querySelector('#admCloseAll').onclick = () => { openCls.clear(); $app.querySelectorAll('details.adm-class').forEach(d => (d.open = false)); };
     }
     draw();
     $app.addEventListener('input', onInput);
@@ -1483,6 +1519,7 @@
       }
       if (b.dataset.addsub !== undefined) {
         const k = draft[+b.dataset.addsub];
+        openCls.add(k.cls);
         k.subjects.push({ key: 's' + Date.now().toString(36), name: 'Новий предмет', icon: '📘', course: '', hidden: false, archive: [] });
         mark(); draw(); mark();
         const inputs = $app.querySelectorAll(`[data-k="${b.dataset.addsub}"][data-f="name"]`); const last = inputs[inputs.length - 1]; if (last) { last.focus(); last.select(); }
