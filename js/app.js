@@ -151,7 +151,7 @@
     top.hidden = !user;
     if (!user) return;
     const links = isAdmin()
-      ? [['#/', 'Класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/teacher/teachers', 'Вчителі'], ['#/teacher/subjects', 'Предмети']]
+      ? [['#/', 'Класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/teacher/teachers', 'Вчителі'], ['#/teacher/subjects', 'Предмети'], ['#/teacher/schedule', 'Розклад']]
       : isTeacher() ? [['#/', 'Мої класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні']]
       : user.role === 'pending' ? []
       : [['#/', 'Мої предмети'], ['#/my', 'Мої результати']];
@@ -219,9 +219,10 @@
       if (p[0] === 'games') return await renderGames(p[1], p[2], p[3]);
       if (p[0] === 'teacher' && isStaff()) {
         if (p[1] === 'students') return await renderStudents();
-        if (p[1] === 'results') return await renderResults(p[2], p[3]);
+        if (p[1] === 'results') return await renderResults(p[2], p[3], p[4]);
         if (p[1] === 'subjects' && isAdmin()) return renderSubjectsAdmin();
         if (p[1] === 'teachers' && isAdmin()) return await renderTeachers();
+        if (p[1] === 'schedule' && isAdmin()) return await renderScheduleAdmin();
       }
       $app.innerHTML = `<div class="empty"><span class="e">🧭</span>Сторінку не знайдено. <a href="#/">На головну</a></div>`;
     } catch (e) {
@@ -304,6 +305,7 @@
     $app.innerHTML = `
       <div class="page-head"><div><h1>${isTeacher() ? 'Мої класи' : 'Оберіть клас'}</h1><p>${isTeacher() ? 'Класи й предмети, які вам призначив адміністратор' : 'Тести та презентації для 2–9 класів'}</p></div></div>
       ${isTeacher() && !myClasses().length ? `<div class="card empty"><span class="e">📭</span>Вам ще не призначено жодного предмета. Зверніться до адміністратора.</div>` : ''}
+      ${myLessonsCard()}
       <div class="class-grid">${myClasses().map(k => `
         <a class="class-tile" style="--c:${k.color}" href="#/class/${k.cls}">
           <span class="num">${k.cls}</span><span class="lbl">клас</span>
@@ -342,20 +344,28 @@
       doneAll += done; totalAll += tests.length;
       const el = document.getElementById('prog-' + s.id);
       if (el) el.innerHTML = `<span class="mini-progress"><i style="width:${done / tests.length * 100}%"></i></span>Виконано ${done} з ${tests.length}`;
-      tests.filter(t => !(bm[t.key] && bm[t.key].best != null)).forEach(t => todo.push(Object.assign({ subject: s }, t)));
+      const plan = lessonPlan(s.id);
+      tests.filter(t => !(bm[t.key] && bm[t.key].best != null)).forEach(t => {
+        const pl = plan && plan.byId[t.key];
+        todo.push(Object.assign({ subject: s, date: pl ? pl.date : '', overdue: !!(pl && lessonPast(pl.date, pl.slot)) }, t));
+      });
     }
+    /* спершу — тести за уроки, що вже відбулися за розкладом (від найдавніших) */
+    const over = todo.filter(t => t.overdue).sort((a, b) => a.date.localeCompare(b.date));
+    if (over.length) { const rest = todo.filter(t => !t.overdue); todo.length = 0; todo.push(...over, ...rest); }
     if (location.hash !== here) return;
     const box = document.getElementById('reminder');
     if (!box) return;
     box.innerHTML = todo.length ? `
       <div class="card reminder">
         <div class="rem-head"><span class="rem-emoji">🔔</span><div><h2>Нагадування</h2>
-          <p>Виконано <b>${doneAll}</b> з <b>${totalAll}</b> тестів. Ще ${todo.length === 1 ? 'залишився' : 'залишилось'} <b>${todo.length}</b>.</p></div></div>
-        <div class="rem-list">${todo.slice(0, 4).map((t, i) => `
-          <a class="rem-item ${i === 0 ? 'next' : ''}" href="${t.href}"><span class="ri-emoji">${t.emoji}</span>
-            <span class="ri-text"><small>${esc(t.subject.name)} · ${esc(t.short)}${i === 0 ? ' · наступний' : ''}</small><b>${esc(t.title)}</b></span><span class="ri-go">→</span></a>`).join('')}
+          <p>Виконано <b>${doneAll}</b> з <b>${totalAll}</b> тестів. Ще ${todo.length === 1 ? 'залишився' : 'залишилось'} <b>${todo.length}</b>.
+          ${over.length ? `<br><b style="color:var(--bad)">⏰ ${over.length} ${plural(over.length, 'тест', 'тести', 'тестів')} за уроки, які вже були, — пройди їх першими!</b>` : ''}</p></div></div>
+        <div class="rem-list">${todo.slice(0, over.length ? Math.min(Math.max(over.length, 4), 8) : 4).map((t, i) => `
+          <a class="rem-item ${t.overdue ? 'overdue' : i === 0 ? 'next' : ''}" href="${t.href}"><span class="ri-emoji">${t.overdue ? '⏰' : t.emoji}</span>
+            <span class="ri-text"><small>${esc(t.subject.name)} · ${esc(t.short)}${t.date ? ` · урок ${t.overdue ? 'був' : 'буде'} ${fmtDay(t.date)}` : ''}${!t.overdue && i === over.length ? ' · наступний' : ''}</small><b>${esc(t.title)}</b></span><span class="ri-go">→</span></a>`).join('')}
         </div>
-        ${todo.length > 4 ? `<p class="muted" style="font-weight:800;margin-top:10px;font-size:14px">…і ще ${todo.length - 4}. Усі тести — на сторінці предмета.</p>` : ''}
+        ${todo.length > Math.max(over.length, 4) && todo.length > 4 ? `<p class="muted" style="font-weight:800;margin-top:10px;font-size:14px">…і ще ${todo.length - Math.min(Math.max(over.length, 4), 8)}. Усі тести — на сторінці предмета.</p>` : ''}
       </div>` : `<div class="card reminder done"><div class="rem-head"><span class="rem-emoji">🎉</span><div><h2>Усі тести виконано!</h2><p>Чудова робота! Презентації можна переглядати скільки завгодно.</p></div></div></div>`;
   }
 
@@ -385,6 +395,10 @@
     const status = key => user.role !== 'student' ? '' : isDone(key)
       ? '<span class="st st-done">✅ Виконано</span>' : '<span class="st st-todo">⏳ Не виконано</span>';
     const allTests = courseTests(course, id);
+    const plan = lessonPlan(id);
+    const dateBadge = l => { const pl = plan && plan.byId[l.id]; if (!pl) return '';
+      const past = lessonPast(pl.date, pl.slot), warn = past && user.role === 'student' && !isDone(l.id);
+      return `<span class="date-badge ${warn ? 'warn' : past ? 'past' : ''}" title="За розкладом: ${dowOf(pl.date)}, ${pl.slot}-й урок">📅 ${fmtDay(pl.date)}${warn ? ' · урок уже був' : ''}</span>`; };
     const nextT = allTests.find(t => !isDone(t.key));
     const crumbs = `<div class="crumbs">${isStaff() ? `<a href="#/">Класи</a><span>›</span>` : ''}<a href="#/class/${meta.cls}">${meta.cls} клас</a><span>›</span><span>${esc(meta.name)}</span></div>`;
 
@@ -403,7 +417,7 @@
             ${s.lessons.map(l => `
               <div class="card lesson-row">
                 <span class="ln">${l.emoji || '📘'}</span>
-                <div><h3>${esc(l.title)}</h3><div class="meta">Урок ${l.n}${l.pages ? ' · ' + esc(pg(l.pages)) : ''} ${status(l.id)}</div></div>
+                <div><h3>${esc(l.title)}</h3><div class="meta">Урок ${l.n}${l.pages ? ' · ' + esc(pg(l.pages)) : ''} ${dateBadge(l)} ${status(l.id)}</div></div>
                 <div class="lesson-actions">
                   <a class="btn light sm" href="#/slides/${id}/${l.id}">🎞 Презентація</a>
                   ${window.Games && Games.has(id, l.id) ? `<a class="btn light sm game-btn" href="#/games/${id}/${l.id}">🎮 Ігри</a>` : ''}
@@ -669,7 +683,340 @@
   }
 
   /* ---------------- вчитель: результати ---------------- */
-  async function renderResults(clsArg, courseArg) {
+  /* =====================================================================
+     РЕЗУЛЬТАТИ: огляд, загальний список, журнал класу, статистика
+     (предмети / класи / учні). Вчитель бачить лише свої предмети й класи.
+     ===================================================================== */
+  let RS = null;   // кеш даних сторінки «Результати»
+  const DAY = 864e5;
+  const LEVELS = [['Початковий', 1, 3, 'g-lo'], ['Середній', 4, 6, 'g-avg'], ['Достатній', 7, 9, 'g-mid'], ['Високий', 10, 12, 'g-hi']];
+  const KIND = { lesson: 'Урок', section: 'Розділ', final: 'Річний' };
+  const pct = (a, b) => b ? Math.round(a / b * 100) : null;
+  const ago = ms => { if (!ms) return 'ще не проходив'; const d = Math.floor((Date.now() - ms) / DAY); return d <= 0 ? 'сьогодні' : d === 1 ? 'вчора' : d + ' дн. тому'; };
+
+  async function loadResultsData(force) {
+    if (!force && RS && RS.uid === user.uid && Date.now() - RS.at < 3 * 60e3) return RS;
+    const subs = [];
+    myClasses().forEach(k => (isAdmin() ? k.subjects : visibleSubjects(k)).filter(s => s.ready).forEach(s =>
+      subs.push({ id: s.id, cls: k.cls, name: s.name, icon: s.icon || '📘', color: k.color, total: ((window.LESSON_INDEX || {})[s.id] || { l: [] }).l.length })));
+    const lists = await Promise.all([Store.listStudents()].concat(subs.map(x => Store.courseResults(x.id).catch(() => []))));
+    const students = lists.shift().slice().sort((a, b) => a.name.localeCompare(b.name, 'uk'));
+    const results = lists.flat().sort((a, b) => (b.atMs || 0) - (a.atMs || 0));
+    const subById = {}; subs.forEach(x => (subById[x.id] = x));
+    const stuById = {}; students.forEach(s => (stuById[s.uid] = s));
+    /* best[uid][course][testId] = { best, attempts, kind } */
+    const best = {};
+    results.forEach(r => {
+      const u = best[r.uid] || (best[r.uid] = {}), c = u[r.course] || (u[r.course] = {});
+      const e = c[r.testId] || (c[r.testId] = { best: null, attempts: 0, kind: r.kind, title: r.title, last: 0 });
+      e.attempts++; e.last = Math.max(e.last, r.atMs || 0);
+      if (r.passed && (e.best == null || r.score > e.best)) e.best = r.score;
+    });
+    RS = { uid: user.uid, at: Date.now(), subs, subById, students, stuById, results, best };
+    return RS;
+  }
+  /* показники учня з одного предмета */
+  function metric(D, uid, course) {
+    const tests = Object.values((D.best[uid] || {})[course] || {});
+    const scores = tests.map(t => t.best).filter(v => v != null);
+    const rs = D.results.filter(r => r.uid === uid && r.course === course);
+    const sub = D.subById[course];
+    const lessonPassed = tests.filter(t => t.kind === 'lesson' && t.best != null).length;
+    return { avg: avg(scores), scores, passed: scores.length, lessonPassed, total: sub ? sub.total : 0, done: sub && sub.total ? lessonPassed / sub.total : null,
+      attempts: rs.length, last: rs.length ? rs[0].atMs || 0 : 0, leaves: rs.reduce((a, r) => a + (r.leaves || 0), 0) };
+  }
+  function studentRow(D, s) {
+    const subs = D.subs.filter(x => x.cls === s.cls);
+    const ms = subs.map(x => metric(D, s.uid, x.id));
+    const scores = ms.flatMap(m => m.scores);
+    const lp = ms.reduce((a, m) => a + m.lessonPassed, 0), tot = ms.reduce((a, m) => a + m.total, 0);
+    const attempts = ms.reduce((a, m) => a + m.attempts, 0), last = Math.max(0, ...ms.map(m => m.last));
+    const leaves = ms.reduce((a, m) => a + m.leaves, 0);
+    const flags = [];
+    const a = avg(scores);
+    if (a != null && a < C.passScore + 2) flags.push('низький середній бал');
+    if (!attempts) flags.push('ще не проходив тестів');
+    else if (Date.now() - last > 14 * DAY) flags.push('не заходив понад 2 тижні');
+    if (attempts >= 3 && leaves / attempts >= 2) flags.push('часто виходить з вікна тесту');
+    const failed = D.results.filter(r => r.uid === s.uid && !r.passed && subs.some(x => x.id === r.course)).length;
+    if (failed >= 3 && failed > attempts / 2) flags.push('багато незарахованих спроб');
+    const overdue = SCHED ? subs.reduce((a, x) => a + overdueOf(D, s.uid, x.id).length, 0) : 0;
+    if (overdue >= 3) flags.push(`не пройдено ${overdue} тестів за минулі уроки`);
+    return { s, subs, ms, avg: a, passed: scores.length, lessonPassed: lp, total: tot, done: tot ? lp / tot : null, attempts, last, leaves, flags };
+  }
+  function subjectRow(D, x) {
+    const studs = D.students.filter(s => s.cls === x.cls);
+    const ms = studs.map(s => metric(D, s.uid, x.id));
+    const scores = ms.flatMap(m => m.scores);
+    const rs = D.results.filter(r => r.course === x.id && studs.some(s => s.uid === r.uid));
+    return { x, students: studs.length, active: ms.filter(m => m.attempts).length, avg: avg(scores), scores,
+      done: studs.length && x.total ? ms.reduce((a, m) => a + m.lessonPassed, 0) / (studs.length * x.total) : null,
+      attempts: rs.length, passRate: pct(rs.filter(r => r.passed).length, rs.length), last: rs.length ? rs[0].atMs : 0 };
+  }
+  function hardTests(D, filter) {
+    const g = {};
+    D.results.filter(filter || (() => true)).forEach(r => {
+      const k = r.course + '|' + r.testId;
+      const e = g[k] || (g[k] = { course: r.course, testId: r.testId, title: r.title, kind: r.kind, n: 0, sum: 0, passed: 0, users: new Set() });
+      e.n++; e.sum += r.score || 0; if (r.passed) e.passed++; e.users.add(r.uid);
+    });
+    return Object.values(g).filter(e => e.n >= 3).map(e => Object.assign(e, { avg: Math.round(e.sum / e.n * 10) / 10, rate: pct(e.passed, e.n) }))
+      .sort((a, b) => a.avg - b.avg || a.rate - b.rate);
+  }
+  const levelBars = scores => {
+    const n = scores.length;
+    if (!n) return '<p class="muted" style="font-weight:700">Ще немає зарахованих тестів</p>';
+    return `<div class="lvl-bar">${LEVELS.map(([nm, lo, hi, cl]) => { const c = scores.filter(v => v >= lo && v <= hi).length; return c ? `<i class="${cl}" style="flex:${c}" title="${nm}: ${c}">${pct(c, n)}%</i>` : ''; }).join('')}</div>
+      <div class="lvl-legend">${LEVELS.map(([nm, lo, hi, cl]) => `<span><b class="dot ${cl}"></b>${nm} (${lo}–${hi}): ${scores.filter(v => v >= lo && v <= hi).length}</span>`).join('')}</div>`;
+  };
+  const doneBar = v => v == null ? '<span class="muted">—</span>' : `<span class="done-bar" title="Пройдено уроків: ${Math.round(v * 100)}%"><i style="width:${Math.min(100, Math.round(v * 100))}%"></i><b>${Math.round(v * 100)}%</b></span>`;
+  const subLabel = x => x ? `${esc(x.icon)} ${esc(x.name)} · ${x.cls} кл.` : '—';
+  function downloadCsv(name, rows) {
+    const csv = '﻿' + rows.map(l => l.map(v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = name; a.click();
+  }
+
+  async function renderResults(tab, a, b) {
+    if (tab && /^\d+$/.test(tab)) { b = a; a = tab; tab = 'journal'; }
+    const TABS = [['overview', '📊 Огляд'], ['all', '📋 Усі результати'], ['journal', '📒 Журнал класу'], ['subjects', '📚 За предметами'], ['classes', '🏫 За класами'], ['students', '🧑‍🎓 За учнями'], ['overdue', '⏰ Нагадування']];
+    if (!TABS.some(t => t[0] === tab)) tab = ss.getItem('rsTab') || 'overview';
+    ss.setItem('rsTab', tab);
+    const tabsHtml = `<div class="page-head"><div><h1>Результати</h1><p>${isAdmin() ? 'Усі класи й предмети' : 'Ваші класи й предмети'} · загальний список, журнал і статистика</p></div>
+        ${tab !== 'journal' ? `<button class="btn light sm" id="rsRefresh" title="Завантажити свіжі дані">🔄 Оновити</button>` : ''}</div>
+      <nav class="rs-tabs">${TABS.map(([k, t]) => `<a href="#/teacher/results/${k}" class="${k === tab ? 'on' : ''}">${t}</a>`).join('')}</nav>`;
+    if (tab === 'journal') return renderJournal(a, b, tabsHtml);
+    $app.innerHTML = tabsHtml + '<div class="loader"><span></span></div>';
+    const D = await loadResultsData();
+    const refresh = () => { const r = $app.querySelector('#rsRefresh'); if (r) r.onclick = async () => { RS = null; route(); }; };
+    if (!D.subs.length) { $app.innerHTML = tabsHtml + `<div class="card empty"><span class="e">📭</span>Немає наповнених предметів${isTeacher() ? ', призначених вам' : ''}.</div>`; refresh(); return; }
+    const body = { overview: rsOverview, all: rsAll, subjects: rsSubjects, classes: rsClasses, students: rsStudents, overdue: rsOverdue }[tab];
+    $app.innerHTML = tabsHtml + '<div id="rsBody"></div>';
+    refresh();
+    body(D, $app.querySelector('#rsBody'), a);
+  }
+
+  /* ---- огляд ---- */
+  function rsOverview(D, box) {
+    const rows = D.students.map(s => studentRow(D, s)).filter(r => r.subs.length);
+    const scores = rows.flatMap(r => r.ms.flatMap(m => m.scores));
+    const week = D.results.filter(r => Date.now() - (r.atMs || 0) < 7 * DAY);
+    const activeWeek = new Set(week.map(r => r.uid)).size;
+    const lp = rows.reduce((a, r) => a + r.lessonPassed, 0), tot = rows.reduce((a, r) => a + r.total, 0);
+    const days = Array.from({ length: 14 }, (_, i) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - 13 + i); return d; });
+    const perDay = days.map(d => D.results.filter(r => r.atMs >= +d && r.atMs < +d + DAY).length);
+    const maxDay = Math.max(1, ...perDay);
+    const attention = rows.filter(r => r.flags.length).sort((x, y) => y.flags.length - x.flags.length || (x.avg ?? 99) - (y.avg ?? 99)).slice(0, 8);
+    const hard = hardTests(D).slice(0, 6);
+    box.innerHTML = `
+      <div class="stat-tiles">
+        <div class="card stat-tile"><div class="v">${rows.length}</div><div class="k">Учнів</div></div>
+        <div class="card stat-tile"><div class="v">${activeWeek}</div><div class="k">Активних за 7 днів</div></div>
+        <div class="card stat-tile"><div class="v">${week.length}</div><div class="k">Спроб за 7 днів</div></div>
+        <div class="card stat-tile"><div class="v">${avg(scores) ?? '—'}</div><div class="k">Середній бал (зараховані)</div></div>
+        <div class="card stat-tile"><div class="v">${tot ? pct(lp, tot) + '%' : '—'}</div><div class="k">Пройдено тестів за уроки</div></div>
+        ${SCHED ? (() => { const n = D.subs.reduce((a, x) => a + D.students.filter(st => st.cls === x.cls).reduce((b, st) => b + overdueOf(D, st.uid, x.id).length, 0), 0);
+          return `<a class="card stat-tile" href="#/teacher/results/overdue" style="text-decoration:none;color:inherit"><div class="v">${n}</div><div class="k">⏰ Не пройдено тестів за минулі уроки</div></a>`; })() : ''}
+      </div>
+      <div class="rs-grid">
+        <div class="card pad"><h3 class="rs-h">📈 Активність за 2 тижні</h3>
+          <div class="day-chart">${perDay.map((n, i) => `<div class="dc-col" title="${days[i].toLocaleDateString('uk-UA')}: ${n} спроб"><b>${n || ''}</b><i style="height:${Math.round(n / maxDay * 100)}%"></i><span>${days[i].getDate()}</span></div>`).join('')}</div></div>
+        <div class="card pad"><h3 class="rs-h">🎯 Рівні навчальних досягнень</h3>${levelBars(scores)}</div>
+        <div class="card pad"><h3 class="rs-h">⚠️ Потребують уваги</h3>
+          ${attention.length ? `<ul class="rs-list">${attention.map(r => `<li><a href="javascript:void(0)" data-st="${r.s.uid}">${esc(r.s.name)}</a> <span class="muted">${r.s.cls} кл.</span><br><small>${r.flags.map(esc).join(' · ')}</small></li>`).join('')}</ul>` : '<p class="muted" style="font-weight:700">Усе добре — тривожних сигналів немає 🎉</p>'}
+          <a class="btn light sm" href="#/teacher/results/students">Усі учні →</a></div>
+        <div class="card pad"><h3 class="rs-h">🧗 Найскладніші тести</h3>
+          ${hard.length ? `<ul class="rs-list">${hard.map(h => `<li><b>${esc(h.title)}</b><br><small>${subLabel(D.subById[h.course])} · середній ${h.avg} · зараховано ${h.rate}% з ${h.n} спроб</small></li>`).join('')}</ul>
+            <p class="muted" style="font-size:13px;font-weight:700">Варто повторити ці теми на уроці.</p>` : '<p class="muted" style="font-weight:700">Потрібно щонайменше 3 спроби на тест, щоб оцінити складність.</p>'}</div>
+      </div>
+      <div class="card pad" style="margin-top:16px"><h3 class="rs-h">🕒 Останні спроби</h3>${attemptsTable(D, D.results.slice(0, 10), false)}
+        <a class="btn light sm" href="#/teacher/results/all">Усі результати →</a></div>`;
+    bindStudentLinks(D, box);
+  }
+
+  function attemptsTable(D, list, withDel, noStudent) {
+    if (!list.length) return '<div class="empty" style="padding:20px">Спроб ще немає</div>';
+    return `<div class="table-wrap"><table class="tbl"><thead><tr><th>Дата</th>${noStudent ? '' : '<th>Учень</th>'}<th>Предмет</th><th>Тест</th><th class="c">Оцінка</th><th class="c">Правильно</th><th class="c">Час</th><th class="c" title="Скільки разів учень виходив з вікна тесту">Виходи</th>${withDel ? '<th></th>' : ''}</tr></thead><tbody>
+      ${list.map(r => { const s = D.stuById[r.uid]; return `<tr><td>${fmtDate(r.atMs)}</td>
+        ${noStudent ? '' : `<td>${s ? `<a href="javascript:void(0)" data-st="${s.uid}" style="font-weight:800">${esc(s.name)}</a>` : `${esc(r.name || '—')} <small class="muted">(видалений)</small>`}</td>`}
+        <td>${subLabel(D.subById[r.course])}</td><td><small class="muted">${KIND[r.kind] || ''}</small> ${esc(r.title)}</td>
+        <td class="c"><span class="cell ${r.passed ? gradeClass(r.score) : 'g-lo'}" title="${r.passed ? 'Зараховано' : 'Не зараховано'}">${r.score}${r.passed ? '' : ' ✕'}</span></td>
+        <td class="c">${r.full}/${r.total}</td><td class="c">${fmtDur(r.durationSec || 0)}${r.auto ? ' ⌛' : ''}</td><td class="c">${r.leaves || 0}</td>
+        ${withDel ? `<td><button class="btn danger sm" data-rdel="${esc(r.id)}" title="Видалити спробу (учень зможе пройти тест ще раз)">✕</button></td>` : ''}</tr>`; }).join('')}
+      </tbody></table></div>`;
+  }
+  function bindStudentLinks(D, box) {
+    box.querySelectorAll('[data-st]').forEach(el => el.onclick = () => studentProfile(D, D.stuById[el.dataset.st]));
+  }
+  async function delAttempt(D, id) {
+    await Store.deleteResult(id);
+    const r = D.results.find(x => x.id === id);
+    D.results = D.results.filter(x => x.id !== id);
+    if (r) { const e = ((D.best[r.uid] || {})[r.course] || {})[r.testId]; if (e) { const rest = D.results.filter(x => x.uid === r.uid && x.course === r.course && x.testId === r.testId);
+      e.attempts = rest.length; e.best = rest.filter(x => x.passed).reduce((m, x) => Math.max(m ?? 0, x.score), null); if (!rest.length) delete D.best[r.uid][r.course][r.testId]; } }
+    toast('Спробу видалено — учень може пройти тест ще раз');
+  }
+
+  /* ---- загальний список ---- */
+  function rsAll(D, box) {
+    const f = JSON.parse(ss.getItem('rsAllF') || '{}');
+    const classes = [...new Set(D.subs.map(x => x.cls))].sort((a, b) => a - b);
+    let shown = 100;
+    box.innerHTML = `<div class="toolbar rs-filters">
+        <select class="input" id="fC"><option value="">Усі класи</option>${classes.map(c => `<option value="${c}" ${f.c == c ? 'selected' : ''}>${c} клас</option>`).join('')}</select>
+        <select class="input" id="fS"><option value="">Усі предмети</option>${D.subs.map(x => `<option value="${x.id}" ${f.s === x.id ? 'selected' : ''}>${esc(x.name)} · ${x.cls} кл.</option>`).join('')}</select>
+        <select class="input" id="fK"><option value="">Усі тести</option>${Object.entries(KIND).map(([k, v]) => `<option value="${k}" ${f.k === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+        <select class="input" id="fP"><option value="">Увесь час</option>${[[1, 'Сьогодні'], [7, '7 днів'], [30, '30 днів']].map(([d, t]) => `<option value="${d}" ${f.p == d ? 'selected' : ''}>${t}</option>`).join('')}</select>
+        <select class="input" id="fR"><option value="">Усі спроби</option><option value="1" ${f.r === '1' ? 'selected' : ''}>Зараховані</option><option value="0" ${f.r === '0' ? 'selected' : ''}>Не зараховані</option></select>
+        <input class="input" id="fQ" placeholder="🔍 Учень або тест" value="${esc(f.q || '')}">
+        <button class="btn light sm" id="fCsv">⬇️ CSV (Excel)</button>
+      </div><div id="allOut"></div>`;
+    const get = () => ({ c: box.querySelector('#fC').value, s: box.querySelector('#fS').value, k: box.querySelector('#fK').value, p: box.querySelector('#fP').value, r: box.querySelector('#fR').value, q: box.querySelector('#fQ').value.trim().toLowerCase() });
+    const filtered = () => { const v = get(); ss.setItem('rsAllF', JSON.stringify(v));
+      return D.results.filter(r => { const x = D.subById[r.course], s = D.stuById[r.uid];
+        return (!v.c || (x && x.cls == v.c)) && (!v.s || r.course === v.s) && (!v.k || r.kind === v.k) && (!v.p || Date.now() - (r.atMs || 0) < v.p * DAY)
+          && (v.r === '' || String(+!!r.passed) === v.r) && (!v.q || ((s ? s.name : r.name || '') + ' ' + (r.title || '')).toLowerCase().includes(v.q)); }); };
+    const draw = () => {
+      const list = filtered(), out = box.querySelector('#allOut');
+      const scores = list.filter(r => r.passed).map(r => r.score);
+      out.innerHTML = `<p class="muted rs-sum">Знайдено спроб: <b>${list.length}</b> · зараховано: <b>${scores.length}</b> (${pct(scores.length, list.length) ?? 0}%) · середня оцінка зарахованих: <b>${avg(scores) ?? '—'}</b> · учнів: <b>${new Set(list.map(r => r.uid)).size}</b></p>
+        <div class="card">${attemptsTable(D, list.slice(0, shown), true)}</div>
+        ${list.length > shown ? `<div style="text-align:center;margin-top:12px"><button class="btn light" id="more">Показати ще (${list.length - shown})</button></div>` : ''}`;
+      bindStudentLinks(D, out);
+      const m = out.querySelector('#more'); if (m) m.onclick = () => { shown += 200; draw(); };
+      out.querySelectorAll('[data-rdel]').forEach(bt => bt.onclick = () => modal(`<div class="m-emoji">🗑</div><h2>Видалити спробу?</h2><p>Якщо тест був зарахований, учень зможе пройти його ще раз.</p>
+        <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn danger" data-close id="dGo">Видалити</button></div>`,
+        b2 => b2.querySelector('#dGo').onclick = async () => { await delAttempt(D, bt.dataset.rdel); draw(); }));
+    };
+    box.querySelectorAll('.rs-filters select').forEach(s => s.onchange = () => { shown = 100; draw(); });
+    let t; box.querySelector('#fQ').oninput = () => { clearTimeout(t); t = setTimeout(() => { shown = 100; draw(); }, 250); };
+    box.querySelector('#fCsv').onclick = () => downloadCsv('rezultaty_usi.csv', [['Дата', 'Учень', 'Клас', 'Предмет', 'Вид', 'Тест', 'Оцінка', 'Зараховано', 'Повністю правильно', 'Питань', 'Час (с)', 'Виходи']]
+      .concat(filtered().map(r => { const s = D.stuById[r.uid], x = D.subById[r.course];
+        return [fmtDate(r.atMs), s ? s.name : r.name, s ? s.cls : r.cls, x ? x.name + ' ' + x.cls + ' кл.' : r.course, KIND[r.kind] || '', r.title, r.score, r.passed ? 'так' : 'ні', r.full, r.total, r.durationSec || 0, r.leaves || 0]; })));
+    draw();
+  }
+
+  /* ---- за предметами ---- */
+  function rsSubjects(D, box) {
+    const rows = D.subs.map(x => subjectRow(D, x));
+    box.innerHTML = `<div class="card table-wrap"><table class="tbl"><thead><tr><th>Предмет</th><th class="c">Учнів</th><th class="c">Проходили</th><th class="c">Середній бал</th><th class="c">Зараховано спроб</th><th style="min-width:150px">Пройдено уроків</th><th>Рівні</th><th class="c">Остання спроба</th><th></th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td style="font-weight:800">${subLabel(r.x)}</td><td class="c">${r.students}</td><td class="c">${r.active}</td>
+        <td class="c"><span class="cell ${gradeClass(r.avg)}">${r.avg ?? '—'}</span></td><td class="c">${r.passRate == null ? '—' : r.passRate + '%'}</td><td>${doneBar(r.done)}</td>
+        <td style="min-width:160px">${r.scores.length ? `<div class="lvl-bar sm">${LEVELS.map(([nm, lo, hi, cl]) => { const c = r.scores.filter(v => v >= lo && v <= hi).length; return c ? `<i class="${cl}" style="flex:${c}" title="${nm}: ${c}"></i>` : ''; }).join('')}</div>` : '<span class="muted">—</span>'}</td>
+        <td class="c">${r.last ? ago(r.last) : '—'}</td>
+        <td><button class="btn light sm" data-sub="${r.x.id}">Детально</button> <a class="btn light sm" href="#/teacher/results/journal/${r.x.cls}/${r.x.id}" title="Журнал класу">📒</a></td></tr>`).join('')}
+      </tbody></table></div>
+      <p class="muted rs-sum">«Проходили» — учні з хоча б однією спробою. «Пройдено уроків» — частка зарахованих тестів за уроки від усіх можливих.</p>`;
+    box.querySelectorAll('[data-sub]').forEach(bt => bt.onclick = () => subjectDetail(D, D.subById[bt.dataset.sub]));
+  }
+  function subjectDetail(D, x) {
+    const r = subjectRow(D, x);
+    const studs = D.students.filter(s => s.cls === x.cls).map(s => ({ s, m: metric(D, s.uid, x.id) })).sort((a, b) => (b.m.avg ?? -1) - (a.m.avg ?? -1));
+    const hard = hardTests(D, z => z.course === x.id).slice(0, 5);
+    const sections = ((window.LESSON_INDEX || {})[x.id] || { s: [] }).s;
+    modal(`<h2>${subLabel(x)}</h2>
+      <div class="stat-tiles sm"><div class="card stat-tile"><div class="v">${r.avg ?? '—'}</div><div class="k">Середній бал</div></div>
+        <div class="card stat-tile"><div class="v">${r.done == null ? '—' : Math.round(r.done * 100) + '%'}</div><div class="k">Пройдено уроків</div></div>
+        <div class="card stat-tile"><div class="v">${r.active}/${r.students}</div><div class="k">Учнів проходили</div></div></div>
+      <h3 class="rs-h">Рівні досягнень</h3>${levelBars(r.scores)}
+      ${sections.length ? `<h3 class="rs-h">Підсумкові за розділами</h3><div class="table-wrap"><table class="tbl"><thead><tr><th>Розділ</th><th class="c">Склали</th><th class="c">Середній</th></tr></thead><tbody>
+        ${sections.map(([n, t]) => { const sc = studs.map(o => ((D.best[o.s.uid] || {})[x.id] || {})['section-' + n]).filter(e => e && e.best != null).map(e => e.best);
+          return `<tr><td>${n}. ${esc(t)}</td><td class="c">${sc.length}/${studs.length}</td><td class="c"><span class="cell ${gradeClass(avg(sc))}">${avg(sc) ?? '—'}</span></td></tr>`; }).join('')}</tbody></table></div>` : ''}
+      <h3 class="rs-h">Рейтинг учнів</h3><div class="table-wrap"><table class="tbl"><thead><tr><th>#</th><th>Учень</th><th class="c">Середній</th><th style="min-width:130px">Уроки</th><th class="c">Остання спроба</th></tr></thead><tbody>
+        ${studs.map((o, i) => `<tr><td>${i + 1}</td><td><a href="javascript:void(0)" data-st="${o.s.uid}" style="font-weight:800">${esc(o.s.name)}</a></td><td class="c"><span class="cell ${gradeClass(o.m.avg)}">${o.m.avg ?? '—'}</span></td><td>${doneBar(o.m.done)}</td><td class="c">${ago(o.m.last)}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">У класі немає учнів</td></tr>'}</tbody></table></div>
+      ${hard.length ? `<h3 class="rs-h">Найскладніші тести</h3><ul class="rs-list">${hard.map(h => `<li><b>${esc(h.title)}</b> — середній ${h.avg}, зараховано ${h.rate}% (${h.n} спроб)</li>`).join('')}</ul>` : ''}
+      <div class="m-actions"><a class="btn light" href="#/teacher/results/journal/${x.cls}/${x.id}" data-close>📒 Журнал класу</a><button class="btn brand" data-close>Закрити</button></div>`,
+      box => box.querySelectorAll('[data-st]').forEach(el => el.onclick = () => studentProfile(D, D.stuById[el.dataset.st])), { wide: true });
+  }
+
+  /* ---- за класами ---- */
+  function rsClasses(D, box) {
+    const classes = [...new Set(D.subs.map(x => x.cls))].sort((a, b) => a - b);
+    const rows = classes.map(c => {
+      const subs = D.subs.filter(x => x.cls === c).map(x => subjectRow(D, x));
+      const studs = D.students.filter(s => s.cls === c);
+      const scores = subs.flatMap(r => r.scores);
+      const week = new Set(D.results.filter(r => Date.now() - (r.atMs || 0) < 7 * DAY && studs.some(s => s.uid === r.uid) && subs.some(z => z.x.id === r.course)).map(r => r.uid)).size;
+      const rated = subs.filter(r => r.avg != null).sort((a, b) => b.avg - a.avg);
+      const dn = subs.filter(r => r.done != null);
+      return { c, k: classInfo(c), subs, students: studs.length, avg: avg(scores), scores, week, done: dn.length ? dn.reduce((a, r) => a + r.done, 0) / dn.length : null, top: rated[0], low: rated.length > 1 ? rated[rated.length - 1] : null };
+    });
+    const empty = rows.filter(r => !r.students), full = rows.filter(r => r.students);
+    box.innerHTML = `${empty.length ? `<p class="muted rs-sum">Без учнів: ${empty.map(r => r.c + ' клас').join(', ')} — <a href="#/teacher/students">додати учнів</a></p>` : ''}
+      ${!full.length ? '<div class="card empty"><span class="e">🧑‍🎓</span>У ваших класах ще немає учнів</div>' : ''}
+      <div class="class-stats">${full.map(r => `<div class="card cs-card" style="--c:${esc(r.k ? r.k.color : '#6C5CE7')}">
+        <div class="cs-head"><span class="cs-num">${r.c}</span><div><h3>${r.c} клас</h3><span class="muted">${r.students} учнів · активних за тиждень: ${r.week}</span></div>
+          <span class="cell ${gradeClass(r.avg)} cs-avg" title="Середній бал">${r.avg ?? '—'}</span></div>
+        <div style="margin:10px 0">${doneBar(r.done)}</div>
+        ${levelBars(r.scores)}
+        <table class="tbl cs-tbl"><tbody>${r.subs.map(z => `<tr><td>${esc(z.x.icon)} ${esc(z.x.name)}</td><td class="c"><span class="cell ${gradeClass(z.avg)}">${z.avg ?? '—'}</span></td><td style="min-width:110px">${doneBar(z.done)}</td>
+          <td><a class="btn light sm" href="#/teacher/results/journal/${r.c}/${z.x.id}" title="Журнал">📒</a></td></tr>`).join('')}</tbody></table>
+        ${r.top && r.low ? `<p class="muted cs-note">💪 Найкраще: <b>${esc(r.top.x.name)}</b> (${r.top.avg}) · 📌 Підтягнути: <b>${esc(r.low.x.name)}</b> (${r.low.avg})</p>` : ''}
+        <button class="btn light sm" data-cls="${r.c}">🧑‍🎓 Учні класу</button></div>`).join('')}</div>`;
+    box.querySelectorAll('[data-cls]').forEach(bt => bt.onclick = () => { ss.setItem('rsStuF', JSON.stringify({ c: bt.dataset.cls })); location.hash = '#/teacher/results/students'; });
+  }
+
+  /* ---- за учнями ---- */
+  function rsStudents(D, box) {
+    const f = JSON.parse(ss.getItem('rsStuF') || '{}');
+    const classes = [...new Set(D.subs.map(x => x.cls))].sort((a, b) => a - b);
+    const all = D.students.map(s => studentRow(D, s)).filter(r => r.subs.length);
+    box.innerHTML = `<div class="toolbar rs-filters">
+        <select class="input" id="sC"><option value="">Усі класи</option>${classes.map(c => `<option value="${c}" ${f.c == c ? 'selected' : ''}>${c} клас</option>`).join('')}</select>
+        <select class="input" id="sO">${[['name', 'За прізвищем'], ['avgD', 'Середній бал ↓'], ['avgA', 'Середній бал ↑'], ['done', 'Виконання ↓'], ['last', 'Давно не заходили'], ['flags', 'Потребують уваги']].map(([k, t]) => `<option value="${k}" ${f.o === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
+        <label class="sp-item"><input type="checkbox" id="sF" ${f.f ? 'checked' : ''}><span>Лише ⚠️</span></label>
+        <input class="input" id="sQ" placeholder="🔍 Прізвище" value="${esc(f.q || '')}">
+        <button class="btn light sm" id="sCsv">⬇️ CSV (Excel)</button></div><div id="stOut"></div>`;
+    const get = () => ({ c: box.querySelector('#sC').value, o: box.querySelector('#sO').value, f: box.querySelector('#sF').checked, q: box.querySelector('#sQ').value.trim().toLowerCase() });
+    const list = () => { const v = get(); ss.setItem('rsStuF', JSON.stringify(v));
+      const l = all.filter(r => (!v.c || r.s.cls == v.c) && (!v.f || r.flags.length) && (!v.q || r.s.name.toLowerCase().includes(v.q)));
+      const by = { name: (a, b) => a.s.cls - b.s.cls || a.s.name.localeCompare(b.s.name, 'uk'), avgD: (a, b) => (b.avg ?? -1) - (a.avg ?? -1), avgA: (a, b) => (a.avg ?? 99) - (b.avg ?? 99),
+        done: (a, b) => (b.done ?? -1) - (a.done ?? -1), last: (a, b) => (a.last || 0) - (b.last || 0), flags: (a, b) => b.flags.length - a.flags.length }[v.o] || ((a, b) => 0);
+      return l.sort(by); };
+    const draw = () => {
+      const l = list();
+      box.querySelector('#stOut').innerHTML = `<p class="muted rs-sum">Учнів: <b>${l.length}</b> · потребують уваги: <b>${l.filter(r => r.flags.length).length}</b></p>
+        <div class="card table-wrap" style="max-height:70vh"><table class="tbl"><thead><tr><th class="sticky-col">Учень</th><th class="c">Клас</th><th class="c">Середній</th><th class="c">Тестів зарах.</th><th style="min-width:140px">Пройдено уроків</th><th class="c">Спроб</th><th class="c">Останній вхід</th><th>Сигнали</th></tr></thead><tbody>
+        ${l.map(r => `<tr><td class="sticky-col"><a href="javascript:void(0)" data-st="${r.s.uid}" style="font-weight:900">${esc(r.s.name)}</a></td><td class="c">${r.s.cls}</td>
+          <td class="c"><span class="cell ${gradeClass(r.avg)}">${r.avg ?? '—'}</span></td><td class="c">${r.passed}</td><td>${doneBar(r.done)}</td><td class="c">${r.attempts}</td>
+          <td class="c">${ago(r.last)}</td><td>${r.flags.length ? `<small class="flag">⚠️ ${r.flags.map(esc).join(', ')}</small>` : '<small class="muted">—</small>'}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">Нікого не знайдено</td></tr>'}
+        </tbody></table></div>`;
+      bindStudentLinks(D, box.querySelector('#stOut'));
+    };
+    box.querySelectorAll('.rs-filters select, #sF').forEach(s => s.onchange = draw);
+    let t; box.querySelector('#sQ').oninput = () => { clearTimeout(t); t = setTimeout(draw, 250); };
+    box.querySelector('#sCsv').onclick = () => downloadCsv('uchni_statystyka.csv', [['Учень', 'Клас', 'Середній бал', 'Тестів зараховано', 'Пройдено уроків, %', 'Спроб', 'Останній вхід', 'Сигнали']]
+      .concat(list().map(r => [r.s.name, r.s.cls, r.avg ?? '', r.passed, r.done == null ? '' : Math.round(r.done * 100), r.attempts, r.last ? fmtDate(r.last) : '', r.flags.join(', ')])));
+    draw();
+  }
+
+  /* ---- картка учня ---- */
+  function studentProfile(D, s) {
+    if (!s) return;
+    const r = studentRow(D, s);
+    let rs = D.results.filter(x => x.uid === s.uid && D.subById[x.course]);
+    const draw = () => `<h2>${esc(s.name)}</h2><p class="muted" style="font-weight:700;margin-bottom:12px">${s.cls} клас · логін <code>${esc(s.login || '')}</code> · останній вхід: ${ago(r.last)}</p>
+      ${r.flags.length ? `<div class="flag-box">⚠️ ${r.flags.map(esc).join(' · ')}</div>` : ''}
+      <div class="stat-tiles sm"><div class="card stat-tile"><div class="v">${r.avg ?? '—'}</div><div class="k">Середній бал</div></div>
+        <div class="card stat-tile"><div class="v">${r.passed}</div><div class="k">Тестів зараховано</div></div>
+        <div class="card stat-tile"><div class="v">${r.done == null ? '—' : Math.round(r.done * 100) + '%'}</div><div class="k">Пройдено уроків</div></div></div>
+      <h3 class="rs-h">За предметами</h3><div class="table-wrap"><table class="tbl"><thead><tr><th>Предмет</th><th class="c">Середній</th><th style="min-width:130px">Уроки</th><th class="c">Спроб</th><th class="c">Остання</th><th></th></tr></thead><tbody>
+        ${r.subs.map((x, i) => { const m = r.ms[i]; return `<tr><td>${esc(x.icon)} ${esc(x.name)}</td><td class="c"><span class="cell ${gradeClass(m.avg)}">${m.avg ?? '—'}</span></td><td>${doneBar(m.done)}</td><td class="c">${m.attempts}</td><td class="c">${ago(m.last)}</td>
+          <td><a class="btn light sm" href="#/teacher/results/journal/${x.cls}/${x.id}" data-close title="Журнал">📒</a></td></tr>`; }).join('')}</tbody></table></div>
+      <h3 class="rs-h">Усі спроби (${rs.length})</h3>
+      <p class="muted" style="font-size:13px;font-weight:700;margin-bottom:8px">Зарахований тест блокується для учня. Щоб дозволити пройти його ще раз, видаліть спробу (✕).</p>
+      ${attemptsTable(D, rs, true, true)}
+      <div class="m-actions"><button class="btn brand" data-close>Закрити</button></div>`;
+    modal(draw(), function mount(box, close) {
+      box.querySelectorAll('[data-rdel]').forEach(bt => bt.onclick = async () => {
+        await delAttempt(D, bt.dataset.rdel); rs = rs.filter(x => x.id !== bt.dataset.rdel);
+        Object.assign(r, studentRow(D, s)); box.innerHTML = draw();
+        box.querySelectorAll('[data-close]').forEach(x => x.onclick = () => { close(); route(); }); mount(box, close);
+      });
+    }, { wide: true });
+  }
+
+  async function renderJournal(clsArg, courseArg, tabsHtml) {
     const classes = myClasses().filter(c => visibleSubjects(c).length || isAdmin());
     const ready = classes.flatMap(k => visibleSubjects(k).filter(s => s.ready).map(s => ({ cls: k.cls, s })));
     let cls = +(clsArg || ss.getItem('rsCls') || (ready[0] && ready[0].cls) || 2);
@@ -680,7 +1027,7 @@
     if (!subj && k && courseArg) { const m = catalogSubject(courseArg); if (m && m.archived && m.cls === cls && canCourse(m.id)) subj = m; }
     if (!subj) subj = subs.find(s => s.ready);
     ss.setItem('rsCls', cls);
-    const head = `<div class="page-head"><div><h1>Результати</h1><p>Найкращі зараховані оцінки кожного учня</p></div></div>
+    const head = tabsHtml + `<p class="muted rs-sum" style="margin-top:0">Найкращі зараховані оцінки кожного учня класу з обраного предмета</p>
       <div class="toolbar">
         <select class="input" id="rCls">${classes.map(c => `<option value="${c.cls}" ${c.cls === cls ? 'selected' : ''}>${c.cls} клас</option>`).join('')}</select>
         <select class="input" id="rSub">${subs.map(s => `<option value="${s.id}" ${subj && s.id === subj.id ? 'selected' : ''} ${s.ready ? '' : 'disabled'}>${esc(s.name)}${s.ready ? '' : ' (готується)'}</option>` + (s.archive || []).map(a => `<option value="${a.course}" ${subj && a.course === subj.id ? 'selected' : ''}>${esc(s.name)} — архів: ${esc(a.label || a.course)}</option>`).join('')).join('')}</select>
@@ -688,8 +1035,8 @@
       </div>`;
     $app.innerHTML = head + '<div class="loader"><span></span></div>';
     const bind = () => {
-      $app.querySelector('#rCls').onchange = e => { location.hash = '#/teacher/results/' + e.target.value; };
-      $app.querySelector('#rSub').onchange = e => { location.hash = '#/teacher/results/' + cls + '/' + e.target.value; };
+      $app.querySelector('#rCls').onchange = e => { location.hash = '#/teacher/results/journal/' + e.target.value; };
+      $app.querySelector('#rSub').onchange = e => { location.hash = '#/teacher/results/journal/' + cls + '/' + e.target.value; };
     };
     bind();
     if (!subj || !subj.ready) { $app.innerHTML = head + `<div class="card empty"><span class="e">⏳</span>Для цього класу ще немає наповнених предметів</div>`; bind(); return; }
@@ -758,7 +1105,7 @@
         </tbody></table></div><div class="m-actions"><button class="btn brand" data-close>Закрити</button></div>`;
       modal(drawM(), function mount(box, close) {
         box.querySelectorAll('[data-rdel]').forEach(b => b.onclick = async () => {
-          await Store.deleteResult(b.dataset.rdel);
+          await Store.deleteResult(b.dataset.rdel); RS = null;
           rs = rs.filter(r => r.id !== b.dataset.rdel);
           const all = byUser[s.uid]; byUser[s.uid] = all.filter(r => r.id !== b.dataset.rdel);
           box.innerHTML = drawM(); box.querySelectorAll('[data-close]').forEach(x => x.onclick = () => { close(); route(); });
@@ -888,12 +1235,15 @@
       modal(`<h2>${approve ? 'Підтвердити заявку' : 'Предмети вчителя'}</h2>
         <div class="field"><label>Ім’я</label><input class="input" id="eTName" value="${esc(t.name)}"></div>
         <p class="muted" style="font-weight:700;margin:-4px 0 10px">${esc(t.email)}</p>
+        ${SCHED ? `<div class="field"><label>Ім’я в «Шкільному розкладі» (для уроків на сьогодні)</label><select class="input" id="eTSched"><option value="">— не вказано</option>
+          ${(SCHED.teachers || []).map(n => `<option ${(t.schedName || (SCHED.teachers.find(x => normT(x) === normT(t.name)) || '')) === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>` : ''}
         <div class="field"><label>Предмети${approve ? ' (позначено ті, які просить вчитель)' : ''}</label>${subjectPicker(approve ? t.requested : t.subjects)}</div>
         <div class="form-error" id="eTErr"></div>
         <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="eTGo">${approve ? '✅ Підтвердити' : 'Зберегти'}</button></div>`,
         (box, close) => box.querySelector('#eTGo').onclick = async () => {
           const pick = readPicker(box);
           const data = Object.assign({ name: box.querySelector('#eTName').value.trim() || t.name }, pick);
+          if (box.querySelector('#eTSched')) data.schedName = box.querySelector('#eTSched').value;
           if (approve) data.pending = false, data.disabled = false;
           const b = box.querySelector('#eTGo'); b.disabled = true;
           try { await Store.updateTeacher(t.uid, data); Object.assign(t, data); close(); draw(); toast(approve ? 'Вчителя підтверджено' : 'Збережено'); }
@@ -1022,6 +1372,313 @@
     view = { active: false, destroy() { $app.removeEventListener('input', onInput); $app.removeEventListener('change', onInput); $app.onclick = null; } };
   }
 
+  /* =====================================================================
+     ЗВ’ЯЗОК ЗІ «ШКІЛЬНИМ РОЗКЛАДОМ» (lesson_plan.html)
+     Адміністратор завантажує файл «копії всіх даних» розкладу. На порталі зберігаються лише
+     дати й номери уроків кожного предмета в кожному класі та ПІБ вчителів (ПІБ учнів — ні).
+     Урок порталу k прив’язується до години розкладу пропорційно: якщо годин більше, ніж уроків
+     у підручнику, частина уроків займає по дві години.
+     ===================================================================== */
+  let SCHED = null;
+  const _planCache = {};
+  const BREAKS = [10, 10, 20, 10, 10, 5, 0];
+  const isoDay = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const todayIso = () => isoDay(new Date());
+  const fmtDay = iso => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}.${m}`; };
+  const DOW = ['неділя', 'понеділок', 'вівторок', 'середа', 'четвер', 'п’ятниця', 'субота'];
+  const dowOf = iso => DOW[new Date(iso + 'T12:00').getDay()];
+  /* «Шевченко Т.Г.» і «Шевченко Тетяна Григорівна» → «шевченко тг» */
+  const normT = n => { const w = String(n || '').replace(/\./g, '. ').trim().split(/\s+/).filter(Boolean); return w.length ? (w[0] + ' ' + w.slice(1, 3).map(x => x[0]).join('')).toLowerCase().replace(/[’']/g, '') : ''; };
+  const normS = n => String(n || '').toLowerCase().replace(/[^а-яіїєґa-z0-9]/g, '');
+  /* автоматично знайти предмет порталу для предмета розкладу в класі g */
+  function autoSubject(name, g) {
+    const k = classInfo(g); if (!k) return '';
+    const a = normS(name), first = String(name).toLowerCase().split(/[\s,(]/)[0];
+    const hit = k.subjects.find(s => normS(s.name) === a) || k.subjects.find(s => { const b = normS(s.name); return b.length >= 5 && a.length >= 5 && (a.startsWith(b) || b.startsWith(a)); })
+      || k.subjects.find(s => first.length >= 5 && String(s.name).toLowerCase().split(/[\s,(]/)[0] === first);
+    return hit ? hit.id : '';
+  }
+  function schedBells() { return (SCHED && SCHED.bells) || []; }
+  const bellOf = slot => { const b = schedBells()[slot - 1]; return b ? b.split('-') : ['', '']; };
+  /* години предмета порталу в розкладі: ['YYYY-MM-DD.slot', …] за зростанням */
+  function schedHours(id) {
+    if (!SCHED) return [];
+    const meta = catalogSubject(id); if (!meta) return [];
+    const set = new Set();
+    (SCHED.entries || []).forEach(e => { if (+e.g === meta.cls && (SCHED.map || {})[e.s + '|' + e.g] === id) e.d.forEach(x => set.add(x)); });
+    return [...set].sort();
+  }
+  /* план уроків порталу за датами */
+  function lessonPlan(id) {
+    if (!SCHED) return null;
+    const key = id + '|' + (SCHED.importedAt || '');
+    if (_planCache[key]) return _planCache[key];
+    const hours = schedHours(id), L = ((window.LESSON_INDEX || {})[id] || { l: [] }).l;
+    if (!hours.length || !L.length) return (_planCache[key] = null);
+    const H = hours.length, N = L.length;
+    const lessons = L.map(([lid, n, title, sec], i) => { const h = hours[Math.min(H - 1, Math.floor(i * H / N))].split('.'); return { id: lid, n, title, sec, date: h[0], slot: +h[1] }; });
+    const lessonOfHour = k => L[Math.min(N - 1, Math.floor(k * N / H))];
+    return (_planCache[key] = { id, hours, lessons, byId: Object.fromEntries(lessons.map(l => [l.id, l])), lessonOfHour });
+  }
+  /* урок уже відбувся: дата раніше за сьогодні або сьогодні, але дзвінок з уроку вже пролунав */
+  function lessonPast(date, slot) {
+    const t = todayIso();
+    if (date < t) return true;
+    if (date > t) return false;
+    const end = bellOf(slot)[1]; if (!end) return false;
+    const [h, m] = end.split(':').map(Number), now = new Date();
+    return now.getHours() * 60 + now.getMinutes() >= h * 60 + m;
+  }
+  const pastLessons = id => { const p = lessonPlan(id); return p ? p.lessons.filter(l => lessonPast(l.date, l.slot)) : []; };
+  /* ім’я поточного вчителя в розкладі */
+  function mySchedName() {
+    if (!SCHED) return '';
+    if (isTeacher()) { if (user.schedName) return user.schedName; const n = normT(user.name); return (SCHED.teachers || []).find(t => normT(t) === n) || ''; }
+    if (isAdmin()) return SCHED.adminTeacher || '';
+    return '';
+  }
+  /* уроки вчителя на дату */
+  function teacherDay(name, iso) {
+    if (!SCHED || !name) return [];
+    const out = [];
+    (SCHED.entries || []).forEach(e => {
+      if (!(e.t || []).includes(name)) return;
+      e.d.forEach((x, k) => { const [d, slot] = x.split('.'); if (d !== iso) return;
+        const id = (SCHED.map || {})[e.s + '|' + e.g] || '';
+        let lesson = null;
+        if (id && canCourse(id)) { const p = lessonPlan(id); if (p) { const idx = p.hours.indexOf(x); const L = p.lessonOfHour(idx); lesson = { id: L[0], n: L[1], title: L[2] }; } }
+        out.push({ slot: +slot, g: +e.g, subject: e.s, id: id && canCourse(id) ? id : '', lesson });
+      });
+    });
+    return out.sort((a, b) => a.slot - b.slot);
+  }
+  function nextTeacherDay(name) {
+    const days = new Set();
+    (SCHED.entries || []).forEach(e => { if ((e.t || []).includes(name)) e.d.forEach(x => days.add(x.split('.')[0])); });
+    return [...days].sort().find(d => d > todayIso()) || '';
+  }
+  /* картка «Мої уроки» на головній вчителя */
+  function myLessonsCard() {
+    const name = mySchedName();
+    if (!SCHED) return isAdmin() ? `<div class="card pad sched-hint">🗓 Підключіть «Шкільний розклад» (вкладка <a href="#/teacher/schedule">Розклад</a>) — тут з’являться ваші уроки на сьогодні, а учні бачитимуть нагадування про тести за уроки, що вже минули.</div>` : '';
+    if (!name) return isAdmin() ? `<div class="card pad sched-hint">🗓 Розклад підключено. Щоб бачити тут свої уроки, оберіть своє ім’я на сторінці <a href="#/teacher/schedule">Розклад</a>.</div>`
+      : `<div class="card pad sched-hint">🗓 Ваше ім’я не знайдено в розкладі. Попросіть адміністратора вказати його у вашому профілі.</div>`;
+    const t = todayIso();
+    let day = t, list = teacherDay(name, t), label = 'Сьогодні';
+    if (!list.length) { day = nextTeacherDay(name); list = day ? teacherDay(name, day) : []; label = day ? 'Наступний робочий день' : ''; }
+    if (!list.length) return `<div class="card pad sched-hint">🗓 У розкладі на найближчі дні немає ваших уроків.</div>`;
+    const row = x => { const [b1, b2] = bellOf(x.slot), past = day === t && lessonPast(day, x.slot);
+      return `<div class="ml-row ${past ? 'past' : ''}"><span class="ml-slot"><b>${x.slot}</b><small>${b1}${b2 ? '–' + b2 : ''}</small></span>
+        <span class="ml-body"><b>${x.g} клас · ${esc(x.subject)}</b>${x.lesson ? `<small>Урок ${x.lesson.n}. ${esc(x.lesson.title)}</small>` : x.id ? '' : '<small class="muted">немає матеріалів на порталі</small>'}</span>
+        ${x.lesson ? `<span class="ml-acts"><a class="btn light sm" href="#/slides/${x.id}/${x.lesson.id}">🎞</a>${window.Games && Games.has(x.id, x.lesson.id) ? `<a class="btn light sm" href="#/games/${x.id}/${x.lesson.id}">🎮</a>` : ''}<a class="btn light sm" href="#/test/${x.id}/lesson/${x.lesson.id}">📝</a></span>` : ''}</div>`; };
+    return `<div class="card pad my-lessons"><div class="ml-head"><h2>🗓 ${label}: ${dowOf(day)}, ${fmtDay(day)}</h2><span class="muted">${esc(name)} · ${list.length} ${plural(list.length, 'урок', 'уроки', 'уроків')}</span></div>${list.map(row).join('')}
+      <p class="muted" style="font-size:13px;font-weight:700;margin-top:8px">Урок порталу підібрано за порядком уроків у розкладі. 🎞 презентація · 🎮 ігри · 📝 тест</p></div>`;
+  }
+
+  /* ---- розбір файлу копії розкладу ---- */
+  function parseTimetableBackup(obj) {
+    if (!obj || obj.format !== 'LESSON_PLAN_BACKUP_V1' || !obj.data) throw new Error('Це не файл копії «Шкільного розкладу». У розкладі натисніть «Зберегти копію всіх даних».');
+    const J = (k, def) => { try { return obj.data[k] ? JSON.parse(obj.data[k]) : def; } catch (e) { return def; } };
+    const set = J('schoolScheduleSettings', null), st = J('schoolScheduleStateV5', null);
+    if (!set || !set.s1_start || !st || !st.state) throw new Error('У файлі немає складеного розкладу. Спершу згенеруйте розклад, потім збережіть копію.');
+    const weekDates = (start, w) => { const [y, m, d] = start.split('-').map(Number); const s = new Date(y, m - 1, d); while (s.getDay() !== 1) s.setDate(s.getDate() - 1); s.setDate(s.getDate() + w * 7); return [0, 1, 2, 3, 4].map(i => { const x = new Date(s); x.setDate(x.getDate() + i); return isoDay(x); }); };
+    const E = {}, teachers = new Set();
+    const add = (c, iso, slot) => {
+      if (!c || !c.subject) return;
+      const g = parseInt(c.grade, 10); if (!g) return;
+      const k = c.subject + '|' + g, e = E[k] || (E[k] = { s: c.subject, g, t: new Set(), d: new Set() });
+      if (c.teacher) { e.t.add(c.teacher); teachers.add(c.teacher); }
+      e.d.add(iso + '.' + slot);
+    };
+    Object.keys(st.state).forEach(grid => {
+      const m = grid.match(/^C(\d+)_(\d)$/); if (!m) return;
+      const start = m[2] === '1' ? set.s1_start : set.s2_start; if (!start) return;
+      (st.state[grid] || []).forEach((wk, w) => { const dates = weekDates(start, w);
+        (wk || []).forEach((row, s) => (row || []).forEach((c, d) => { if (!c || c.isHoliday) return; add(c, dates[d], s + 1); if (c.co) add(Object.assign({ grade: c.grade }, c.co), dates[d], s + 1); })); });
+    });
+    const entries = Object.values(E).map(e => ({ s: e.s, g: e.g, t: [...e.t].sort(), d: [...e.d].sort() })).filter(e => e.d.length)
+      .sort((a, b) => a.g - b.g || a.s.localeCompare(b.s, 'uk'));
+    if (!entries.length) throw new Error('У розкладі ще немає уроків.');
+    const bells = []; { const [h, mi] = String(set.firstLessonStart || '09:00').split(':').map(Number), dur = parseInt(set.lessonDuration, 10) || 40; const cur = new Date(2000, 0, 1, h, mi);
+      const f = d => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      for (let i = 0; i < 7; i++) { const a = f(cur); cur.setMinutes(cur.getMinutes() + dur); bells.push(a + '-' + f(cur)); cur.setMinutes(cur.getMinutes() + BREAKS[i]); } }
+    const students = (J('schoolStudentsV1', []) || []).filter(s => s && s.name).map(s => ({ name: String(s.name).trim(), cls: parseInt(s.grade, 10) })).filter(s => s.cls);
+    const y = +set.s1_start.slice(0, 4);
+    return { entries, bells, teachers: [...teachers].sort((a, b) => a.localeCompare(b, 'uk')), students, year: `${y}/${y + 1}`, created: obj.created || '', s1: set.s1_start, s2end: set.s2_end || '' };
+  }
+
+  /* ---- адміністратор: сторінка «Розклад» ---- */
+  async function renderScheduleAdmin() {
+    let draft = null;   // щойно завантажений файл (ще не збережений)
+    const draw = () => {
+      const S = draft || SCHED;
+      const map = Object.assign({}, (SCHED && SCHED.map) || {});
+      if (draft) draft.entries.forEach(e => { const k = e.s + '|' + e.g; if (!(k in map)) map[k] = autoSubject(e.s, e.g); });
+      $app.innerHTML = `<div class="page-head"><div><h1>🗓 Шкільний розклад</h1><p>Зв’язок із конструктором розкладу: уроки на сьогодні для вчителів, дати уроків і нагадування учням про тести</p></div></div>
+        <div class="card pad sched-steps">
+          <ol><li>Відкрийте «Шкільний розклад» і натисніть <b>«Зберегти копію всіх даних»</b> — збережеться файл <code>rozklad_kopiya_….json</code>.</li>
+            <li>Натисніть <b>«Завантажити файл розкладу»</b> нижче й оберіть цей файл.</li>
+            <li>Перевірте, які предмети розкладу відповідають предметам порталу, і натисніть <b>«Зберегти розклад на порталі»</b>.</li></ol>
+          <p class="muted" style="font-weight:700;font-size:14px">На портал потрапляють лише дати, номери уроків, предмети й ПІБ вчителів. Імена учнів не зберігаються — їх можна лише використати для створення облікових записів. Якщо розклад зміниться, просто завантажте новий файл.</p>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"><label class="btn brand">📂 Завантажити файл розкладу<input type="file" id="tFile" accept=".json,application/json" hidden></label>
+            ${SCHED && !draft ? `<button class="btn danger" id="tDel">Від’єднати розклад</button>` : ''}</div>
+          <div class="form-error" id="tErr"></div></div>
+        ${S ? `
+        <div class="stat-tiles">
+          <div class="card stat-tile"><div class="v">${esc(S.year || '—')}</div><div class="k">Навчальний рік</div></div>
+          <div class="card stat-tile"><div class="v">${new Set(S.entries.map(e => e.g)).size}</div><div class="k">Класів</div></div>
+          <div class="card stat-tile"><div class="v">${S.entries.length}</div><div class="k">Предметів у класах</div></div>
+          <div class="card stat-tile"><div class="v">${(S.teachers || []).length}</div><div class="k">Вчителів</div></div>
+        </div>
+        ${draft ? '<div class="flag-box">📄 Файл прочитано, але ще не збережено. Перевірте відповідність предметів і натисніть «Зберегти розклад на порталі».</div>' : `<p class="muted rs-sum">Збережено: ${SCHED.importedAt ? fmtDate(SCHED.importedAt) : '—'}</p>`}
+        <div class="card pad"><h3 class="rs-h">📚 Відповідність предметів</h3>
+          <div class="table-wrap"><table class="tbl"><thead><tr><th>Клас</th><th>Предмет у розкладі</th><th>Вчитель</th><th class="c">Годин за рік</th><th>Предмет на порталі</th><th class="c">Уроків у підручнику</th></tr></thead><tbody>
+          ${S.entries.map(e => { const k = e.s + '|' + e.g, kl = classInfo(e.g); const lc = map[k] ? ((window.LESSON_INDEX || {})[map[k]] || { l: [] }).l.length : 0;
+            return `<tr><td class="c">${e.g}</td><td style="font-weight:800">${esc(e.s)}</td><td><small>${(e.t || []).map(esc).join(', ')}</small></td><td class="c">${e.d.length}</td>
+            <td><select class="input sm" data-map="${esc(k)}" ${draft ? '' : 'disabled'}><option value="">— не пов’язувати</option>${(kl ? kl.subjects : []).map(s => `<option value="${esc(s.id)}" ${map[k] === s.id ? 'selected' : ''}>${esc(s.icon)} ${esc(s.name)}${s.ready ? '' : ' (готується)'}</option>`).join('')}</select></td>
+            <td class="c">${lc || '—'}</td></tr>`; }).join('')}</tbody></table></div>
+          ${draft ? '' : '<p class="muted" style="font-size:13px;font-weight:700">Щоб змінити відповідність, завантажте файл розкладу ще раз.</p>'}</div>
+        ${draft ? `<div style="display:flex;gap:10px;flex-wrap:wrap;margin:16px 0"><button class="btn brand" id="tSave">💾 Зберегти розклад на порталі</button><button class="btn light" id="tCancel">Скасувати</button></div>` : ''}
+        ${!draft ? `<div class="card pad" style="margin-top:16px"><h3 class="rs-h">🙋 Я в розкладі</h3>
+          <p class="muted" style="font-weight:700;margin-bottom:8px">Оберіть своє ім’я — тоді на головній сторінці ви бачитимете свої уроки на сьогодні.</p>
+          <select class="input" id="tMe" style="max-width:360px"><option value="">— не показувати мої уроки</option>${(S.teachers || []).map(t => `<option ${S.adminTeacher === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>` : ''}
+        <div id="tTeachers"></div><div id="tStudents"></div>` : ''}`;
+      const err = $app.querySelector('#tErr');
+      $app.querySelector('#tFile').onchange = async ev => {
+        const f = ev.target.files[0]; if (!f) return;
+        try { draft = Object.assign(parseTimetableBackup(JSON.parse(await f.text())), { file: f.name }); draw(); }
+        catch (e) { err.textContent = e.message || 'Не вдалося прочитати файл'; }
+      };
+      const del = $app.querySelector('#tDel');
+      if (del) del.onclick = () => modal(`<div class="m-emoji">🗓</div><h2>Від’єднати розклад?</h2><p>Зникнуть уроки на сьогодні та нагадування за датами. Результати учнів не зміняться.</p>
+        <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn danger" data-close id="dGo">Від’єднати</button></div>`,
+        b => b.querySelector('#dGo').onclick = async () => { await Store.saveSchedule(null); SCHED = null; draw(); toast('Розклад від’єднано'); });
+      const cancel = $app.querySelector('#tCancel'); if (cancel) cancel.onclick = () => { draft = null; draw(); };
+      $app.querySelectorAll('[data-map]').forEach(sel => sel.onchange = () => { map[sel.dataset.map] = sel.value; });
+      const save = $app.querySelector('#tSave');
+      if (save) save.onclick = async () => {
+        save.disabled = true; save.textContent = 'Зберігаємо…';
+        $app.querySelectorAll('[data-map]').forEach(sel => { map[sel.dataset.map] = sel.value; });
+        const data = { v: 1, year: draft.year, bells: draft.bells, teachers: draft.teachers, entries: draft.entries, map, source: draft.file, created: draft.created,
+          importedAt: Date.now(), adminTeacher: (SCHED && SCHED.adminTeacher) || draft.teachers.find(t => normT(t) === normT(user.name)) || '' };
+        try { await Store.saveSchedule(data); const students = draft.students; SCHED = data; draft = null; draw(); drawPeople(students); toast('Розклад збережено на порталі'); }
+        catch (e) { err.textContent = 'Не вдалося зберегти: ' + e.message; save.disabled = false; save.textContent = '💾 Зберегти розклад на порталі'; }
+      };
+      const me = $app.querySelector('#tMe');
+      if (me) me.onchange = async () => { SCHED.adminTeacher = me.value; await Store.saveSchedule(SCHED); toast('Збережено'); };
+      if (!draft && SCHED) drawPeople(null);
+      if (draft) drawPeople(draft.students, true);
+    };
+    /* вчителі та учні з розкладу */
+    async function drawPeople(students, preview) {
+      const S = draft || SCHED; if (!S) return;
+      const tBox = $app.querySelector('#tTeachers'), sBox = $app.querySelector('#tStudents'); if (!tBox) return;
+      if (preview) { tBox.innerHTML = ''; sBox.innerHTML = students && students.length ? `<div class="card pad" style="margin-top:16px"><h3 class="rs-h">🧑‍🎓 Учні в розкладі: ${students.length}</h3><p class="muted" style="font-weight:700">Після збереження розкладу тут можна буде створити для них облікові записи.</p></div>` : ''; return; }
+      let teachers = [];
+      try { teachers = await Store.listTeachers(); } catch (e) { /* немає прав або бази */ }
+      const portalByName = n => teachers.find(t => (t.schedName && t.schedName === n) || normT(t.name) === normT(n));
+      const subjOf = n => { const ids = new Set(), cls = new Set();
+        S.entries.forEach(e => { if (!(e.t || []).includes(n)) return; const id = S.map[e.s + '|' + e.g]; if (!id) return; const sj = catalogSubject(id); if (!sj) return;
+          const k = classInfo(e.g); const full = k && k.subjects.find(x => x.id === id); (full ? subjectIds(full) : [id]).forEach(x => ids.add(x)); cls.add(+e.g); });
+        return { subjects: [...ids], classes: [...cls].sort((a, b) => a - b) }; };
+      tBox.innerHTML = `<div class="card pad" style="margin-top:16px"><h3 class="rs-h">👩‍🏫 Вчителі з розкладу</h3>
+        <p class="muted" style="font-weight:700;margin-bottom:10px">«Синхронізувати» — призначити вчителю на порталі ті самі предмети й класи, що в розкладі. Відсутнього вчителя можна створити: потрібна лише його пошта.</p>
+        <div class="table-wrap"><table class="tbl"><thead><tr><th>У розкладі</th><th>Предмети (на порталі)</th><th>На порталі</th><th></th></tr></thead><tbody>
+        ${(S.teachers || []).map((n, i) => { const t = portalByName(n), sj = subjOf(n);
+          return `<tr><td style="font-weight:800">${esc(n)}</td><td>${teacherSubjectTags(sj.subjects)}</td>
+            <td>${t ? `${esc(t.name)}${t.pending ? ' <span class="tag">заявка</span>' : ''}${t.disabled ? ' <span class="tag">вимкнено</span>' : ''}` : '<span class="muted">немає</span>'}</td>
+            <td style="white-space:nowrap">${t ? `<button class="btn light sm" data-sync="${i}">🔄 Синхронізувати</button>` : `<button class="btn brand sm" data-new="${i}">＋ Створити</button>`}</td></tr>`; }).join('')}</tbody></table></div></div>`;
+      tBox.querySelectorAll('[data-sync]').forEach(b => b.onclick = async () => {
+        const n = S.teachers[+b.dataset.sync], t = portalByName(n), sj = subjOf(n);
+        const data = Object.assign({ schedName: n }, sj, t.pending ? { pending: false, disabled: false } : {});
+        await Store.updateTeacher(t.uid, data); Object.assign(t, data); drawPeople(null); toast('Предмети вчителя оновлено за розкладом');
+      });
+      tBox.querySelectorAll('[data-new]').forEach(b => b.onclick = () => {
+        const n = S.teachers[+b.dataset.new], sj = subjOf(n), pw = StoreUtils.makeTeacherPassword();
+        modal(`<h2>Створити вчителя</h2><p class="muted" style="font-weight:700;margin-bottom:10px">${esc(n)} · ${teacherSubjectTags(sj.subjects)}</p>
+          <div class="field"><label>Прізвище, ім’я та по батькові</label><input class="input" id="nName" value="${esc(n)}"></div>
+          <div class="field"><label>Пошта (логін)</label><input class="input" id="nMail" type="email" autocapitalize="off"></div>
+          <div class="field"><label>Початковий пароль</label><input class="input pw" id="nPw" value="${esc(pw)}"></div>
+          <div class="form-error" id="nErr"></div>
+          <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="nGo">Створити</button></div>`,
+          (box, close) => box.querySelector('#nGo').onclick = async () => {
+            const email = box.querySelector('#nMail').value.trim(), password = box.querySelector('#nPw').value.trim(), name = box.querySelector('#nName').value.trim() || n;
+            if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { box.querySelector('#nErr').textContent = 'Введіть пошту'; return; }
+            if (password.length < 8) { box.querySelector('#nErr').textContent = 'Пароль — щонайменше 8 символів'; return; }
+            try { const t = await Store.createTeacher(Object.assign({ name, email, password }, sj)); await Store.updateTeacher(t.uid, { schedName: n }); close(); drawPeople(null);
+              modal(`<div class="m-emoji">✅</div><h2>Вчителя створено</h2><div class="lc" style="text-align:left">Логін: <code>${esc(email)}</code><br>Пароль: <code>${esc(password)}</code></div><p class="muted" style="font-size:14px;font-weight:700;margin-top:10px">Передайте ці дані вчителю.</p><div class="m-actions"><button class="btn brand" data-close>Готово</button></div>`); }
+            catch (e) { box.querySelector('#nErr').textContent = e.message; }
+          });
+      });
+      /* учні */
+      if (!students || !students.length) {
+        sBox.innerHTML = `<div class="card pad" style="margin-top:16px"><h3 class="rs-h">🧑‍🎓 Учні з розкладу</h3><p class="muted" style="font-weight:700">Щоб створити облікові записи учнів зі списку розкладу, завантажте файл розкладу ще раз і збережіть — після цього тут з’явиться список (імена на порталі не зберігаються).</p></div>`;
+        return;
+      }
+      const portal = await Store.listStudents();
+      const has = s => portal.some(p => p.cls === s.cls && normS(p.name) === normS(s.name));
+      const missing = students.filter(s => !has(s) && classInfo(s.cls));
+      sBox.innerHTML = `<div class="card pad" style="margin-top:16px"><h3 class="rs-h">🧑‍🎓 Учні з розкладу</h3>
+        ${missing.length ? `<p class="muted" style="font-weight:700;margin-bottom:10px">Немає на порталі: <b>${missing.length}</b> з ${students.length}. Позначте, кому створити облікові записи (логіни й паролі з’являться на сторінці «Учні»).</p>
+          <div class="stu-pick">${[...new Set(missing.map(s => s.cls))].sort((a, b) => a - b).map(c => `<div class="sp-class" style="--c:${esc((classInfo(c) || {}).color || '#6C5CE7')}"><b class="sp-num">${c} клас</b>
+            ${missing.filter(s => s.cls === c).map(s => `<label class="sp-item"><input type="checkbox" checked data-stu="${students.indexOf(s)}"><span>${esc(s.name)}</span></label>`).join('')}</div>`).join('')}</div>
+          <button class="btn brand" id="stGo" style="margin-top:12px">Створити облікові записи</button><div class="muted" id="stProg" style="font-weight:800;margin-top:8px"></div>`
+        : `<p style="font-weight:800">✅ Усі ${students.length} учнів із розкладу вже мають облікові записи на порталі.</p>`}</div>`;
+      const go = sBox.querySelector('#stGo');
+      if (go) go.onclick = async () => {
+        const pick = [...sBox.querySelectorAll('[data-stu]:checked')].map(c => students[+c.dataset.stu]);
+        if (!pick.length) return;
+        go.disabled = true; let ok = 0;
+        for (const s of pick) { try { await Store.createStudent(s.name, s.cls); ok++; } catch (e) { console.warn(e); } sBox.querySelector('#stProg').textContent = `Створено ${ok} з ${pick.length}…`; }
+        toast(`Створено облікових записів: ${ok}`); drawPeople(students);
+      };
+    }
+    draw();
+  }
+
+  /* ---- нагадування: учні, які не пройшли тести за уроки, що вже відбулися ---- */
+  function overdueOf(D, uid, id) {
+    const past = pastLessons(id); if (!past.length) return [];
+    const b = (D.best[uid] || {})[id] || {};
+    return past.filter(l => !(b[l.id] && b[l.id].best != null));
+  }
+  function rsOverdue(D, box) {
+    const subs = D.subs.filter(x => lessonPlan(x.id));
+    if (!SCHED) { box.innerHTML = `<div class="card empty"><span class="e">🗓</span>Нагадування за датами працюють, коли підключено «Шкільний розклад».${isAdmin() ? ' <a href="#/teacher/schedule">Підключити</a>' : ' Зверніться до адміністратора.'}</div>`; return; }
+    if (!subs.length) { box.innerHTML = `<div class="card empty"><span class="e">🗓</span>Ваші предмети не пов’язані з розкладом.${isAdmin() ? ' Перевірте відповідність на сторінці <a href="#/teacher/schedule">Розклад</a>.' : ''}</div>`; return; }
+    const f = JSON.parse(ss.getItem('rsOvF') || '{}');
+    box.innerHTML = `<div class="toolbar rs-filters">
+        <select class="input" id="oS"><option value="">Усі предмети</option>${subs.map(x => `<option value="${x.id}" ${f.s === x.id ? 'selected' : ''}>${esc(x.name)} · ${x.cls} кл.</option>`).join('')}</select>
+        <button class="btn light sm" id="oCsv">⬇️ CSV (Excel)</button></div><div id="oOut"></div>`;
+    const build = () => { const s = box.querySelector('#oS').value; ss.setItem('rsOvF', JSON.stringify({ s }));
+      return subs.filter(x => !s || x.id === s).map(x => {
+        const past = pastLessons(x.id), plan = lessonPlan(x.id), next = plan.lessons.find(l => !lessonPast(l.date, l.slot));
+        const rows = D.students.filter(st => st.cls === x.cls).map(st => ({ st, miss: overdueOf(D, st.uid, x.id) })).filter(r => r.miss.length).sort((a, b) => b.miss.length - a.miss.length);
+        return { x, past, next, rows, students: D.students.filter(st => st.cls === x.cls).length };
+      }); };
+    const draw = () => {
+      const groups = build();
+      box.querySelector('#oOut').innerHTML = `<p class="muted rs-sum">Сьогодні ${fmtDay(todayIso())}. Учням показується таке саме нагадування на їхній сторінці.</p>` + groups.map(G => `
+        <div class="card pad ov-card"><div class="ov-head"><h3>${subLabel(G.x)}</h3>
+          <span class="muted">За розкладом відбулося ${G.past.length} з ${lessonPlan(G.x.id).lessons.length} уроків${G.next ? ` · наступний ${fmtDay(G.next.date)}: урок ${G.next.n}` : ''}</span>
+          ${G.rows.length ? `<button class="btn light sm" data-copy="${G.x.id}">📋 Текст для чату класу</button>` : ''}</div>
+          ${!G.students ? '<p class="muted" style="font-weight:700">У класі немає учнів</p>' : G.rows.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Учень</th><th class="c">Не пройдено</th><th>Тести за уроки, що вже були</th></tr></thead><tbody>
+            ${G.rows.map(r => `<tr><td><a href="javascript:void(0)" data-st="${r.st.uid}" style="font-weight:800">${esc(r.st.name)}</a></td><td class="c"><span class="cell ${r.miss.length > 3 ? 'g-lo' : 'g-avg'}">${r.miss.length}</span></td>
+              <td><small>${r.miss.slice(0, 6).map(l => `У${l.n} (${fmtDay(l.date)})`).join(', ')}${r.miss.length > 6 ? ' …' : ''}</small></td></tr>`).join('')}</tbody></table></div>`
+            : G.past.length ? '<p style="font-weight:800">✅ Усі учні пройшли тести за уроки, що вже відбулися.</p>' : '<p class="muted" style="font-weight:700">Уроків за розкладом ще не було.</p>'}
+        </div>`).join('');
+      bindStudentLinks(D, box.querySelector('#oOut'));
+      box.querySelectorAll('[data-copy]').forEach(bt => bt.onclick = () => {
+        const G = groups.find(g => g.x.id === bt.dataset.copy);
+        const txt = `🔔 ${G.x.name}, ${G.x.cls} клас. Нагадування: пройдіть тести на порталі «${C.siteTitle}» за уроки, які вже були.\n` + G.rows.map(r => `• ${r.st.name}: ${r.miss.map(l => 'урок ' + l.n).join(', ')}`).join('\n') + `\n${location.origin + location.pathname}`;
+        navigator.clipboard.writeText(txt).then(() => toast('Текст скопійовано'));
+      });
+    };
+    box.querySelector('#oS').onchange = draw;
+    box.querySelector('#oCsv').onclick = () => downloadCsv('nagaduvannya.csv', [['Учень', 'Клас', 'Предмет', 'Не пройдено', 'Уроки']].concat(build().flatMap(G => G.rows.map(r => [r.st.name, G.x.cls, G.x.name, r.miss.length, r.miss.map(l => `${l.n} (${fmtDay(l.date)})`).join(', ')]))));
+    draw();
+  }
+
   /* ---------------- старт ---------------- */
   window.App = { modal, plural, toast };
   Store.onAuth(async (u, err) => {
@@ -1030,6 +1687,9 @@
     if (u && Store.getCatalog) {
       try { const remote = await Store.getCatalog(); if (remote && remote.length) applyCatalog(remote); }
       catch (e) { console.warn('Каталог з бази не завантажено', e); }
+    }
+    if (u && Store.getSchedule && u.role !== 'pending') {
+      try { SCHED = await Store.getSchedule(); } catch (e) { console.warn('Розклад не завантажено', e); SCHED = null; }
     }
     if (u && (!location.hash || location.hash === '#/login')) history.replaceState(null, '', '#/');
     skipGuard = true;

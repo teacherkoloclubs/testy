@@ -66,7 +66,7 @@
           if (d.disabled) { await auth.signOut(); return authCb(null, 'Доступ вчителя вимкнено. Зверніться до адміністратора.'); }
           me = d.pending
             ? { uid: u.uid, role: 'pending', name: d.name, email: d.email }
-            : { uid: u.uid, role: 'teacher', name: d.name, email: d.email, subjects: d.subjects || [], classes: (d.classes || []).map(Number) };
+            : { uid: u.uid, role: 'teacher', name: d.name, email: d.email, subjects: d.subjects || [], classes: (d.classes || []).map(Number), schedName: d.schedName || '' };
           return authCb(me);
         }
         me = { uid: u.uid, role: 'student', name: d.name, cls: d.cls, login: d.login };
@@ -211,6 +211,15 @@
       },
       async saveCatalog(classes) {
         await db.collection('config').doc('catalog').set({ classes, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+      },
+      /* розклад уроків, імпортований зі «Шкільного розкладу» (без ПІБ учнів) */
+      async getSchedule() {
+        const d = await db.collection('config').doc('schedule').get();
+        return d.exists ? d.data() : null;
+      },
+      async saveSchedule(data) {
+        if (data) await db.collection('config').doc('schedule').set(Object.assign({}, data, { updatedAt: firebase.firestore.FieldValue.serverTimestamp() }));
+        else await db.collection('config').doc('schedule').delete();
       }
     };
   }
