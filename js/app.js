@@ -99,7 +99,7 @@
     return opts && opts.short ? `«${esc(t.title)}», ${t.grade} клас${t.part ? ', ч. ' + esc(t.part) : ''} · ${esc(t.authors)} · ${esc(t.publisher)}, ${t.year}` : main;
   }
   function sourceNote(course, pages) {
-    return `<div class="source-note">📚 <span><b>Джерело:</b> ${bookLine(course)}${pages ? `, с. ${esc(pages)}` : ''}.${course.textbook && course.textbook.approval ? ` <span class="muted">${esc(course.textbook.approval)}</span>` : ''}</span></div>`;
+    return `<div class="source-note">📚 <span><b>Джерело:</b> ${bookLine(course)}${pages ? `, ${esc(pg(pages))}` : ''}.${course.textbook && course.textbook.approval ? ` <span class="muted">${esc(course.textbook.approval)}</span>` : ''}</span></div>`;
   }
   function classInfo(n) { return CATALOG.find(k => k.cls === +n); }
 
@@ -321,7 +321,7 @@
             ${s.lessons.map(l => `
               <div class="card lesson-row">
                 <span class="ln">${l.emoji || '📘'}</span>
-                <div><h3>${esc(l.title)}</h3><div class="meta">Урок ${l.n}${l.pages ? ' · с. ' + esc(l.pages) : ''} ${status(l.id)}</div></div>
+                <div><h3>${esc(l.title)}</h3><div class="meta">Урок ${l.n}${l.pages ? ' · ' + esc(pg(l.pages)) : ''} ${status(l.id)}</div></div>
                 <div class="lesson-actions">
                   <a class="btn light sm" href="#/slides/${id}/${l.id}">🎞 Презентація</a>
                   ${testBtn(l.id, `#/test/${id}/lesson/${l.id}`, '📝 Тест')}
@@ -344,10 +344,14 @@
   }
   /* сторінки підручника для групи уроків: «5–8» + «9–12» → «5–12» */
   function pagesRange(lessons) {
-    const nums = lessons.map(l => String(l.pages || '').split(/[–-]/).map(Number)).filter(a => a[0]);
+    const parts = [...new Set(lessons.map(l => (String(l.pages || '').match(/^ч\.\s*(\d+)/) || [])[1] || ''))];
+    if (parts.length > 1) return 'ч. ' + parts.join('–');
+    const nums = lessons.map(l => String(l.pages || '').replace(/^ч\.\s*\d+,\s*с\.\s*/, '').split(/[–-]/).map(Number)).filter(a => a[0]);
     if (!nums.length) return '';
-    return Math.min(...nums.map(a => a[0])) + '–' + Math.max(...nums.map(a => a[a.length - 1]));
+    return (parts[0] ? 'ч. ' + parts[0] + ', с. ' : '') + Math.min(...nums.map(a => a[0])) + '–' + Math.max(...nums.map(a => a[a.length - 1]));
   }
+  /* «5–8» → «с. 5–8»; «ч. 2, с. 3–12» лишається як є */
+  function pg(p) { p = String(p || ''); return /^\d/.test(p) ? 'с. ' + p : p; }
 
   /* ---------------- презентація ---------------- */
   async function renderSlides(id, lid) {
@@ -363,7 +367,7 @@
       testHref: `#/test/${id}/lesson/${lid}`,
       crumbs: `<a href="#/course/${id}">${esc(meta.name)} · ${meta.cls} клас</a><span>›</span><span>${esc(lesson.section.title)}</span>`,
       source: sourceNote(course, lesson.pages),
-      sourceText: bookLine(course) + (lesson.pages ? ', с. ' + esc(lesson.pages) : '')
+      sourceText: bookLine(course) + (lesson.pages ? ', ' + esc(pg(lesson.pages)) : '')
     });
   }
 

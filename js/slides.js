@@ -9,6 +9,7 @@
     const p = s.p ? `<p>${rich(s.p)}</p>` : '';
     const list = s.list ? `<ul class="s-list">${s.list.map(x => `<li>${rich(x)}</li>`).join('')}</ul>` : '';
     const steps = s.steps ? `<ol class="s-steps">${s.steps.map(x => `<li>${rich(x)}</li>`).join('')}</ol>` : '';
+    const code = s.code ? `<pre class="s-code">${esc(s.code)}</pre>` : '';
     const cards = s.cards ? `<div class="s-cards">${s.cards.map(c => `<div class="s-card"><b>${c[0]}</b>${esc(c[1])}${c[2] ? `<small>${esc(c[2])}</small>` : ''}</div>`).join('')}</div>` : '';
     switch (s.type) {
       case 'cover':
@@ -24,7 +25,7 @@
         return `<div class="slide s-title" style="text-align:center;align-items:center"><div class="s-label">📖 Словничок</div><h2>${esc(s.h || 'Нові слова уроку')}</h2>
           <div class="words">${(s.words || []).map(w => `<span>${esc(w)}</span>`).join('')}</div>${p}</div>`;
       default:
-        return `<div class="slide"><div class="s-row"><div><h2>${esc(s.h)}</h2>${p}${list}${steps}${cards}</div>${s.cards ? '' : side}</div></div>`;
+        return `<div class="slide"><div class="s-row"><div><h2>${esc(s.h)}</h2>${p}${code}${list}${steps}${cards}</div>${s.cards ? '' : side}</div></div>`;
     }
   }
 
@@ -34,7 +35,7 @@
     root.innerHTML = `
       <div class="crumbs">${opts.crumbs || ''}</div>
       <div class="page-head"><div><h1 style="font-size:clamp(22px,3vw,30px)">${esc(lesson.emoji || '')} ${esc(lesson.title)}</h1>
-        <p>Презентація · ${slides.length} слайдів${lesson.pages ? ' · підручник, с. ' + esc(lesson.pages) : ''}</p></div>
+        <p>Презентація · ${slides.length} слайдів${lesson.pages ? ' · підручник, ' + esc(/^\d/.test(lesson.pages) ? 'с. ' + lesson.pages : lesson.pages) : ''}</p></div>
         <a class="btn brand" href="${opts.testHref}">📝 Пройти тест</a></div>
       <div class="slides-shell">
         <div class="slide-stage" id="stage" style="--c:${opts.color}" tabindex="0">${slides.map(s => slideHtml(s, lesson)).join('')}</div>

@@ -421,3 +421,6 @@ h1, h2, h3 { overflow-wrap: break-word; }
 .subject-tile h3, .subject-tile h3 * { font-family: var(--font); font-weight: 900; font-size: 20px; line-height: 1.2;
   overflow-wrap: normal; word-break: normal; hyphens: manual; }
 .class-tile .subs span { overflow-wrap: normal; word-break: normal; }
+
+/* фрагменти програмного коду на слайдах */
+.s-code { margin: 14px 0 0; padding: 14px 18px; border-radius: 14px; background: #1E1B4B; color: #E0E7FF; font: 600 clamp(15px,1.7vw,19px)/1.55 ui-monospace, 'Cascadia Code', Consolas, monospace; white-space: pre; overflow-x: auto; }

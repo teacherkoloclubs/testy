@@ -17,25 +17,25 @@ window.CATALOG = [
   ]},
   { cls: 5, color: '#14B8C4', subjects: [
     { id: 'informatics5', name: 'Інформатика', icon: '💻', ready: true },
-    { id: 'math5', name: 'Математика', icon: '➗' }
+    { id: 'math5', name: 'Математика', icon: '➗', ready: true }
   ]},
   { cls: 6, color: '#3B82F6', subjects: [
     { id: 'informatics6', name: 'Інформатика', icon: '💻', ready: true },
-    { id: 'math6', name: 'Математика', icon: '➗' }
+    { id: 'math6', name: 'Математика', icon: '➗', ready: true }
   ]},
   { cls: 7, color: '#6366F1', subjects: [
-    { id: 'informatics7', name: 'Інформатика', icon: '💻' },
-    { id: 'physics7', name: 'Фізика', icon: '🔭' }
+    { id: 'informatics7', name: 'Інформатика', icon: '💻', ready: true },
+    { id: 'physics7', name: 'Фізика', icon: '🔭', ready: true }
   ]},
   { cls: 8, color: '#A855F7', subjects: [
-    { id: 'informatics8', name: 'Інформатика', icon: '💻' },
-    { id: 'physics8', name: 'Фізика', icon: '🔭' },
-    { id: 'business8', name: 'Підприємництво', icon: '💼' }
+    { id: 'informatics8', name: 'Інформатика', icon: '💻', ready: true },
+    { id: 'physics8', name: 'Фізика', icon: '🔭', ready: true },
+    { id: 'business8', name: 'Підприємництво', icon: '💼', ready: true }
   ]},
   { cls: 9, color: '#EC4899', subjects: [
-    { id: 'informatics9', name: 'Інформатика', icon: '💻' },
-    { id: 'physics9', name: 'Фізика', icon: '🔭' },
-    { id: 'business9', name: 'Підприємництво', icon: '💼' }
+    { id: 'informatics9', name: 'Інформатика', icon: '💻', ready: true },
+    { id: 'physics9', name: 'Фізика', icon: '🔭', ready: true },
+    { id: 'business9', name: 'Підприємництво', icon: '💼', ready: true }
   ]}
 ];
 
@@ -46,5 +46,15 @@ window.AVAILABLE_COURSES = [
   { id: 'informatics3', subject: 'Інформатика', title: 'Інформатика, 3 клас — Морзе, Барна, «Я досліджую світ», ч. 2, 2025' },
   { id: 'informatics4', subject: 'Інформатика', title: 'Інформатика, 4 клас — Морзе, Барна, «Інформатика», 2026' },
   { id: 'informatics5', subject: 'Інформатика', title: 'Інформатика, 5 клас — Морзе, Барна, «Інформатика», 2022' },
-  { id: 'informatics6', subject: 'Інформатика', title: 'Інформатика, 6 клас — Морзе, Барна, «Інформатика», 2023' }
+  { id: 'informatics6', subject: 'Інформатика', title: 'Інформатика, 6 клас — Морзе, Барна, «Інформатика», 2023' },
+  { id: 'informatics7', subject: 'Інформатика', title: 'Інформатика, 7 клас — Морзе, Барна, «Інформатика», 2024' },
+  { id: 'informatics8', subject: 'Інформатика', title: 'Інформатика, 8 клас — Морзе, Барна, «Інформатика», 2025' },
+  { id: 'informatics9', subject: 'Інформатика', title: 'Інформатика, 9 клас — Бондаренко, Ластовецький та ін., «Ранок», 2026' },
+  { id: 'physics7', subject: 'Фізика', title: 'Фізика, 7 клас — Бар’яхтар, Довгий та ін., «Ранок», 2024' },
+  { id: 'physics8', subject: 'Фізика', title: 'Фізика, 8 клас — Бар’яхтар, Довгий та ін., «Ранок», 2021' },
+  { id: 'physics9', subject: 'Фізика', title: 'Фізика, 9 клас — Бар’яхтар, Довгий та ін., «Ранок», 2026' },
+  { id: 'math5', subject: 'Математика', title: 'Математика, 5 клас — Мерзляк, Полонський, Якір, «Гімназія», 2022' },
+  { id: 'math6', subject: 'Математика', title: 'Математика, 6 клас — Мерзляк, Полонський, Якір, «Гімназія», 2023 (ч. 1–2)' },
+  { id: 'business8', subject: 'Підприємництво', title: 'Підприємництво і фінансова грамотність, 8 клас — Гільберг, Суховій, «Генеза», 2025' },
+  { id: 'business9', subject: 'Підприємництво', title: 'Підприємництво і фінансова грамотність, 9 клас — Гільберг, Суховій, «Генеза», 2026' }
 ];
