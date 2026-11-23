@@ -310,3 +310,12 @@ html { background: var(--bg); }
   .j-wrap::after { content: 'Деталі за розділами — у вкладках «Розділ N» вище'; display: block; padding: 8px 12px; font-size: 12px; color: var(--ink-3, #64748B); font-weight: 700; }
 }
 @media (max-width:700px){ .j-wrap:has(.j-sec-tbl)::after{display:none} }
+
+/* статистика класу: рядки предметів у межах картки */
+.cs-list { margin-top: 12px; display: flex; flex-direction: column; min-width: 0; }
+.cs-row { display: grid; grid-template-columns: minmax(0, 1fr) 38px 64px 32px; align-items: center; gap: 6px; padding: 7px 0; border-bottom: 1px solid var(--line, #E5E7EB); min-width: 0; }
+.cs-row:last-child { border-bottom: 0; }
+.cs-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; min-width: 0; }
+.cs-row .cell { justify-self: center; }
+.cs-bar { min-width: 0; } .cs-bar > * { max-width: 100%; }
+.cs-j { padding: 0 !important; width: 32px; height: 30px; justify-content: center; }

@@ -1054,8 +1054,7 @@
           <span class="cell ${gradeClass(r.avg)} cs-avg" title="Середній бал">${r.avg ?? '—'}</span></div>
         <div style="margin:10px 0">${doneBar(r.done)}</div>
         ${levelBars(r.scores)}
-        <table class="tbl cs-tbl"><tbody>${r.subs.map(z => `<tr><td>${esc(z.x.icon)} ${esc(z.x.name)}</td><td class="c"><span class="cell ${gradeClass(z.avg)}">${z.avg ?? '—'}</span></td><td style="min-width:110px">${doneBar(z.done)}</td>
-          <td><a class="btn light sm" href="#/teacher/results/journal/${r.c}/${z.x.id}" title="Журнал">📒</a></td></tr>`).join('')}</tbody></table>
+        <div class="cs-list">${r.subs.map(z => `<div class="cs-row"><span class="cs-name">${esc(z.x.icon)} ${esc(z.x.name)}</span><span class="cell ${gradeClass(z.avg)}">${z.avg ?? '—'}</span><span class="cs-bar">${doneBar(z.done)}</span><a class="btn light sm cs-j" href="#/teacher/results/journal/${r.c}/${z.x.id}" title="Журнал">📒</a></div>`).join('')}</div>
         ${r.top && r.low ? `<p class="muted cs-note">💪 Найкраще: <b>${esc(r.top.x.name)}</b> (${r.top.avg}) · 📌 Підтягнути: <b>${esc(r.low.x.name)}</b> (${r.low.avg})</p>` : ''}
         <button class="btn light sm" data-cls="${r.c}">🧑‍🎓 Учні класу</button></div>`).join('')}</div>`;
     box.querySelectorAll('[data-cls]').forEach(bt => bt.onclick = () => { ss.setItem('rsStuF', JSON.stringify({ c: bt.dataset.cls })); location.hash = '#/teacher/results/students'; });
