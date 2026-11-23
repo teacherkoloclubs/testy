@@ -44,6 +44,9 @@
       await loadScript('data/courses/' + id + '.js');
       const c = COURSES[id];
       for (const p of (c.parts || [])) await loadScript('data/courses/' + p);
+      for (const p of (c.ext || [])) await loadScript('data/courses/' + p);
+      for (const p of (c.games || [])) await loadScript('data/courses/' + p);
+      if (window.Slides && Slides.applyExt) Slides.applyExt(c);
       c._loaded = true;
       c.sections.forEach(s => s.lessons.forEach(l => { l.section = s; }));
     }
@@ -81,7 +84,19 @@
     return CATALOG.map(k => ({ cls: k.cls, color: k.color, subjects: k.subjects.map(s => ({
       key: s.key, name: s.name, icon: s.icon, course: s.course || '', unlinked: !!s.unlinked, hidden: !!s.hidden, archive: s.archive || [] })) }));
   }
-  const visibleSubjects = k => k.subjects.filter(s => !(s.hidden && user && user.role === 'student'));
+  /* ---------- ролі ---------- */
+  const isAdmin = () => !!user && user.role === 'admin';
+  const isTeacher = () => !!user && user.role === 'teacher';
+  const isStaff = () => isAdmin() || isTeacher();
+  /* id курсів (разом з архівними виданнями), доступних вчителю */
+  const canCourse = id => !isTeacher() || (user.subjects || []).includes(id);
+  const canSubject = s => !isTeacher() || [s.id, s.key, s.course].concat((s.archive || []).map(a => a.course)).some(x => x && user.subjects.includes(x));
+  const visibleSubjects = k => k.subjects.filter(s => !(s.hidden && user && user.role === 'student') && canSubject(s));
+  /* класи, які бачить користувач: адміністратор — усі, вчитель — де є його предмети */
+  const myClasses = () => isTeacher() ? CATALOG.filter(k => visibleSubjects(k).length || (user.classes || []).includes(k.cls)) : CATALOG;
+  const roleLabel = () => isAdmin() ? 'Адміністратор' : isTeacher() ? 'Вчитель' : user.role === 'pending' ? 'Заявка вчителя' : user.cls + ' клас';
+  /* id для збереження в профілі вчителя: ключ, чинний курс і архівні видання предмета */
+  const subjectIds = s => [...new Set([s.id, s.key, s.course].concat((s.archive || []).map(a => a.course)).filter(Boolean))];
   function catalogSubject(id) {
     for (const k of CATALOG) for (const s of k.subjects)
       if (s.id === id) return Object.assign({ cls: k.cls, color: k.color }, s);
@@ -135,19 +150,41 @@
     const top = document.getElementById('topbar');
     top.hidden = !user;
     if (!user) return;
-    const links = user.role === 'teacher'
-      ? [['#/', 'Класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/teacher/subjects', 'Предмети']]
+    const links = isAdmin()
+      ? [['#/', 'Класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/teacher/teachers', 'Вчителі'], ['#/teacher/subjects', 'Предмети']]
+      : isTeacher() ? [['#/', 'Мої класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні']]
+      : user.role === 'pending' ? []
       : [['#/', 'Мої предмети'], ['#/my', 'Мої результати']];
     const h = location.hash || '#/';
     document.getElementById('topnav').innerHTML = links.map(([href, t]) =>
       `<a href="${href}" class="${(href === '#/' ? (h === '#/' || h.startsWith('#/class') || h.startsWith('#/course')) : h.startsWith(href)) ? 'active' : ''}">${t}</a>`).join('');
     document.getElementById('userchip').innerHTML = `
       <span class="avatar">${esc(initials(user.name))}</span>
-      <span class="who"><b>${esc(user.name)}</b><small>${user.role === 'teacher' ? 'Вчитель' : user.cls + ' клас'}</small></span>
+      <span class="who"><b>${esc(user.name)}</b><small>${esc(roleLabel())}</small></span>
+      ${isStaff() ? `<button class="logout-btn" id="pwBtn" title="Змінити пароль"><span aria-hidden="true">🔑</span><span>Пароль</span></button>` : ''}
       <button class="logout-btn" id="logout" title="Вийти з порталу"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg><span>Вийти</span></button>`;
     document.getElementById('logout').onclick = () => modal(`<div class="m-emoji">👋</div><h2>Вийти з порталу?</h2>
       <div class="m-actions"><button class="btn light" data-close>Ні</button><button class="btn" data-close id="mOut">Вийти</button></div>`,
       b => b.querySelector('#mOut').onclick = () => { history.replaceState(null, '', '#/'); lastHash = '#/'; Store.signOut(); });
+    const pwBtn = document.getElementById('pwBtn');
+    if (pwBtn) pwBtn.onclick = passwordDialog;
+  }
+  function passwordDialog() {
+    modal(`<h2>🔑 Змінити пароль</h2>
+      <div class="field"><label>Поточний пароль</label><input class="input" type="password" id="pOld" autocomplete="current-password"></div>
+      <div class="field"><label>Новий пароль (щонайменше 8 символів)</label><input class="input" type="password" id="pNew" autocomplete="new-password"></div>
+      <div class="field"><label>Повторіть новий пароль</label><input class="input" type="password" id="pNew2" autocomplete="new-password"></div>
+      <div class="form-error" id="pErr"></div>
+      <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="pGo">Змінити</button></div>`,
+      (box, close) => box.querySelector('#pGo').onclick = async () => {
+        const o = box.querySelector('#pOld').value, n = box.querySelector('#pNew').value, n2 = box.querySelector('#pNew2').value;
+        const err = box.querySelector('#pErr');
+        if (n.length < 8) { err.textContent = 'Новий пароль має містити щонайменше 8 символів'; return; }
+        if (n !== n2) { err.textContent = 'Нові паролі не збігаються'; return; }
+        const b = box.querySelector('#pGo'); b.disabled = true; b.textContent = 'Змінюємо…';
+        try { await Store.changePassword(o, n); close(); toast('Пароль змінено'); }
+        catch (e) { err.textContent = e.message; b.disabled = false; b.textContent = 'Змінити'; }
+      });
   }
 
   /* ---------------- маршрутизатор ---------------- */
@@ -172,16 +209,19 @@
     if (!user) return renderLogin();
     const p = hash.replace(/^#\/?/, '').split('/').filter(Boolean);
     try {
-      if (!p.length) return user.role === 'teacher' ? renderClasses() : await renderClass(user.cls);
+      if (user.role === 'pending') return renderPending();
+      if (!p.length) return isStaff() ? renderClasses() : await renderClass(user.cls);
       if (p[0] === 'class') return await renderClass(+p[1]);
       if (p[0] === 'course') return await renderCourse(p[1]);
       if (p[0] === 'slides') return await renderSlides(p[1], p[2]);
       if (p[0] === 'test') return await renderTest(p[1], p[2], p[3]);
       if (p[0] === 'my') return await renderMy();
-      if (p[0] === 'teacher' && user.role === 'teacher') {
+      if (p[0] === 'games') return await renderGames(p[1], p[2], p[3]);
+      if (p[0] === 'teacher' && isStaff()) {
         if (p[1] === 'students') return await renderStudents();
         if (p[1] === 'results') return await renderResults(p[2], p[3]);
-        if (p[1] === 'subjects') return renderSubjectsAdmin();
+        if (p[1] === 'subjects' && isAdmin()) return renderSubjectsAdmin();
+        if (p[1] === 'teachers' && isAdmin()) return await renderTeachers();
       }
       $app.innerHTML = `<div class="empty"><span class="e">🧭</span>Сторінку не знайдено. <a href="#/">На головну</a></div>`;
     } catch (e) {
@@ -203,12 +243,15 @@
         </div>
         <form class="card login-card" id="loginForm" autocomplete="on">
           <h2>Вхід</h2>
-          <p class="muted" style="font-weight:700">Логін і пароль видає вчитель</p>
-          <div class="field"><label for="lg">Логін</label><input class="input" id="lg" name="username" autocomplete="username" required autocapitalize="off" spellcheck="false" placeholder="наприклад, 2ivanenko25"></div>
+          <p class="muted" style="font-weight:700">Учням логін і пароль видає вчитель. Вчителі входять зі своєю поштою.</p>
+          <div class="field"><label for="lg">Логін або пошта</label><input class="input" id="lg" name="username" autocomplete="username" required autocapitalize="off" spellcheck="false" placeholder="наприклад, 2ivanenko25"></div>
           <div class="field"><label for="pw">Пароль</label><input class="input" id="pw" name="password" type="password" autocomplete="current-password" required></div>
           ${Store.mode === 'setup' ? `<div class="setup-note">⚙️ Сайт ще не підключено до бази даних. Вчителю: заповніть розділ <b>firebase</b> у файлі <b>js/config.js</b> (інструкція — у README.md).</div>` : ''}
           <div class="form-error" id="lErr">${esc(err || '')}</div>
           <button class="btn brand" type="submit">Увійти →</button>
+          ${Store.mode === 'firebase' ? `<div class="login-links">
+            <a href="javascript:void(0)" id="forgot">Вчитель: забули пароль?</a>
+            ${C.teacherSelfSignup ? `<a href="javascript:void(0)" id="signup">👩‍🏫 Я вчитель — подати заявку</a>` : ''}</div>` : ''}
         </form>
       </div>`;
     $app.querySelector('#loginForm').addEventListener('submit', async e => {
@@ -217,16 +260,54 @@
       try { await Store.signIn($app.querySelector('#lg').value, $app.querySelector('#pw').value); }
       catch (ex) { $app.querySelector('#lErr').textContent = ex.message; b.disabled = false; b.textContent = 'Увійти →'; }
     });
+    const fg = $app.querySelector('#forgot');
+    if (fg) fg.onclick = () => modal(`<h2>Відновлення пароля</h2>
+      <p class="muted" style="font-weight:700;margin-bottom:10px">Для вчителів. Учням пароль підкаже вчитель.</p>
+      <div class="field"><label>Ваша пошта</label><input class="input" id="fMail" type="email" autocapitalize="off" value="${esc(($app.querySelector('#lg').value || '').includes('@') ? $app.querySelector('#lg').value : '')}"></div>
+      <div class="form-error" id="fErr"></div>
+      <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="fGo">Надіслати лист</button></div>`,
+      (box, close) => box.querySelector('#fGo').onclick = async () => {
+        const m = box.querySelector('#fMail').value.trim();
+        if (!m.includes('@')) { box.querySelector('#fErr').textContent = 'Введіть пошту'; return; }
+        try { await Store.sendReset(m); close(); toast('Якщо така пошта зареєстрована, лист уже надіслано'); }
+        catch (e) { box.querySelector('#fErr').textContent = e.message; }
+      });
+    const su = $app.querySelector('#signup');
+    if (su) su.onclick = signupDialog;
+  }
+  function signupDialog() {
+    const opts = CATALOG.map(k => k.subjects.filter(sj => sj.ready).map(sj => `<label class="sp-item"><input type="checkbox" value="${esc(sj.id)}"><span>${k.cls} кл. · ${esc(sj.icon)} ${esc(sj.name)}</span></label>`).join('')).join('');
+    modal(`<h2>👩‍🏫 Заявка вчителя</h2>
+      <p class="muted" style="font-weight:700;margin-bottom:12px">Після підтвердження адміністратором ви побачите свої класи, учнів і результати.</p>
+      <div class="field"><label>Прізвище, ім’я та по батькові</label><input class="input" id="sName"></div>
+      <div class="field"><label>Пошта (буде вашим логіном)</label><input class="input" id="sMail" type="email" autocapitalize="off" spellcheck="false"></div>
+      <div class="field"><label>Пароль (щонайменше 8 символів)</label><input class="input" id="sPw" type="password" autocomplete="new-password"></div>
+      <div class="field"><label>Які предмети ви викладаєте?</label><div class="subj-pick flat">${opts}</div></div>
+      <div class="field"><label>Коментар для адміністратора (необов’язково)</label><input class="input" id="sNote" maxlength="300" placeholder="Наприклад: класний керівник 3-А"></div>
+      <div class="form-error" id="sErr"></div>
+      <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="sGo">Надіслати заявку</button></div>`,
+      (box, close) => box.querySelector('#sGo').onclick = async () => {
+        const name = box.querySelector('#sName').value.trim(), email = box.querySelector('#sMail').value.trim(), password = box.querySelector('#sPw').value;
+        const err = box.querySelector('#sErr');
+        if (!name) { err.textContent = 'Введіть ім’я'; return; }
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { err.textContent = 'Введіть правильну адресу пошти'; return; }
+        if (password.length < 8) { err.textContent = 'Пароль має містити щонайменше 8 символів'; return; }
+        const requested = [...box.querySelectorAll('.subj-pick input:checked')].map(c => c.value);
+        const b = box.querySelector('#sGo'); b.disabled = true; b.textContent = 'Надсилаємо…';
+        try { await Store.registerTeacher({ name, email, password, requested, note: box.querySelector('#sNote').value }); close(); }
+        catch (e) { err.textContent = e.message; b.disabled = false; b.textContent = 'Надіслати заявку'; }
+      }, { wide: true });
   }
 
   /* ---------------- класи / предмети ---------------- */
   function renderClasses() {
     $app.innerHTML = `
-      <div class="page-head"><div><h1>Оберіть клас</h1><p>Тести та презентації для 2–9 класів</p></div></div>
-      <div class="class-grid">${CATALOG.map(k => `
+      <div class="page-head"><div><h1>${isTeacher() ? 'Мої класи' : 'Оберіть клас'}</h1><p>${isTeacher() ? 'Класи й предмети, які вам призначив адміністратор' : 'Тести та презентації для 2–9 класів'}</p></div></div>
+      ${isTeacher() && !myClasses().length ? `<div class="card empty"><span class="e">📭</span>Вам ще не призначено жодного предмета. Зверніться до адміністратора.</div>` : ''}
+      <div class="class-grid">${myClasses().map(k => `
         <a class="class-tile" style="--c:${k.color}" href="#/class/${k.cls}">
           <span class="num">${k.cls}</span><span class="lbl">клас</span>
-          <span class="subs">${k.subjects.map(s => `<span>${esc(s.name)}</span>`).join('')}</span></a>`).join('')}
+          <span class="subs">${visibleSubjects(k).map(s => `<span>${esc(s.name)}</span>`).join('')}</span></a>`).join('')}
       </div>`;
   }
 
@@ -234,7 +315,8 @@
     const k = classInfo(n);
     if (!k) { $app.innerHTML = `<div class="empty"><span class="e">🤷</span>Клас не знайдено</div>`; return; }
     if (n <= 4) document.body.classList.add('theme-primary');
-    const crumbs = user.role === 'teacher' ? `<div class="crumbs"><a href="#/">Класи</a><span>›</span><span>${n} клас</span></div>` : '';
+    if (isTeacher() && !myClasses().includes(k)) { location.hash = '#/'; return; }
+    const crumbs = isStaff() ? `<div class="crumbs"><a href="#/">Класи</a><span>›</span><span>${n} клас</span></div>` : '';
     $app.innerHTML = `${crumbs}
       <div class="page-head"><div><h1>${user.role === 'student' ? 'Привіт, ' + esc(user.name.split(' ').slice(-1)[0]) + '! 👋' : n + ' клас'}</h1>
       <p>${user.role === 'student' ? n + ' клас · обери предмет' : 'Предмети'}</p></div></div>
@@ -281,7 +363,7 @@
   async function renderCourse(id) {
     const meta = catalogSubject(id);
     if (!meta || !meta.ready) { $app.innerHTML = `<div class="empty"><span class="e">⏳</span>Матеріали ще готуються</div>`; return; }
-    if (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) { location.hash = '#/'; return; }
+    if (!meta || (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) || !canCourse(meta.id)) { location.hash = '#/'; return; }
     $app.innerHTML = '<div class="loader"><span></span></div>';
     const course = await loadCourse(id);
     if (course.primary) document.body.classList.add('theme-primary');
@@ -304,7 +386,7 @@
       ? '<span class="st st-done">✅ Виконано</span>' : '<span class="st st-todo">⏳ Не виконано</span>';
     const allTests = courseTests(course, id);
     const nextT = allTests.find(t => !isDone(t.key));
-    const crumbs = `<div class="crumbs">${user.role === 'teacher' ? `<a href="#/">Класи</a><span>›</span>` : ''}<a href="#/class/${meta.cls}">${meta.cls} клас</a><span>›</span><span>${esc(meta.name)}</span></div>`;
+    const crumbs = `<div class="crumbs">${isStaff() ? `<a href="#/">Класи</a><span>›</span>` : ''}<a href="#/class/${meta.cls}">${meta.cls} клас</a><span>›</span><span>${esc(meta.name)}</span></div>`;
 
     $app.innerHTML = `${crumbs}
       <div class="course-hero" style="--c:${meta.color}">
@@ -324,6 +406,7 @@
                 <div><h3>${esc(l.title)}</h3><div class="meta">Урок ${l.n}${l.pages ? ' · ' + esc(pg(l.pages)) : ''} ${status(l.id)}</div></div>
                 <div class="lesson-actions">
                   <a class="btn light sm" href="#/slides/${id}/${l.id}">🎞 Презентація</a>
+                  ${window.Games && Games.has(id, l.id) ? `<a class="btn light sm game-btn" href="#/games/${id}/${l.id}">🎮 Ігри</a>` : ''}
                   ${testBtn(l.id, `#/test/${id}/lesson/${l.id}`, '📝 Тест')}
                   ${user.role === 'student' ? g(l.id) : ''}
                 </div>
@@ -356,7 +439,7 @@
   /* ---------------- презентація ---------------- */
   async function renderSlides(id, lid) {
     const meta = catalogSubject(id);
-    if (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) { location.hash = '#/'; return; }
+    if (!meta || (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) || !canCourse(meta.id)) { location.hash = '#/'; return; }
     const course = await loadCourse(id);
     if (course.primary) document.body.classList.add('theme-primary');
     const lesson = course.sections.flatMap(s => s.lessons).find(l => l.id === lid);
@@ -371,10 +454,29 @@
     });
   }
 
+  /* ---------------- ігри уроку ---------------- */
+  async function renderGames(id, lid, gi) {
+    const meta = catalogSubject(id);
+    if (!meta || (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) || !canCourse(meta.id)) { location.hash = '#/'; return; }
+    const course = await loadCourse(id);
+    if (course.primary) document.body.classList.add('theme-primary');
+    const lesson = course.sections.flatMap(s => s.lessons).find(l => l.id === lid);
+    if (!lesson || !Games.has(id, lid)) throw new Error('Ігри до цього уроку не знайдено');
+    const o = { uid: user.uid, course: id, lesson: lid, href: i => `#/games/${id}/${lid}/${i}`, menuHref: `#/games/${id}/${lid}` };
+    const crumbs = `<div class="crumbs"><a href="#/course/${id}">${esc(meta.name)} · ${meta.cls} клас</a><span>›</span>${gi != null ? `<a href="${o.menuHref}">Ігри</a><span>›</span><span>Гра ${+gi + 1}</span>` : '<span>Ігри</span>'}</div>`;
+    $app.innerHTML = `${crumbs}
+      <div class="page-head"><div><h1>🎮 ${esc(lesson.emoji || '')} ${esc(lesson.title)}</h1><p>Урок ${lesson.n} · ігри до уроку</p></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap"><a class="btn light" href="#/slides/${id}/${lid}">🎞 Презентація</a><a class="btn light" href="#/test/${id}/lesson/${lid}">📝 Тест</a></div></div>
+      <div id="gBox"></div>`;
+    const box = $app.querySelector('#gBox');
+    if (gi == null) Games.menu(box, o);
+    else view = Object.assign({ active: false }, Games.play(box, o, +gi));
+  }
+
   /* ---------------- тест ---------------- */
   async function renderTest(id, kind, key) {
     const meta = catalogSubject(id);
-    if (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) { location.hash = '#/'; return; }
+    if (!meta || (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) || !canCourse(meta.id)) { location.hash = '#/'; return; }
     const course = await loadCourse(id);
     if (course.primary) document.body.classList.add('theme-primary');
     const all = course.sections.flatMap(s => s.lessons);
@@ -471,25 +573,27 @@
   async function renderStudents() {
     $app.innerHTML = '<div class="loader"><span></span></div>';
     let students = await Store.listStudents();
-    const filterCls = ss.getItem('stFilter') || 'all';
+    /* класи, з якими можна працювати: адміністратор — усі, вчитель — свої */
+    const clsList = isAdmin() ? CATALOG.map(k => k.cls) : (user.classes || []).slice().sort((a, b) => a - b);
+    if (!isAdmin() && ss.getItem('stFilter') !== 'all' && !clsList.includes(+ss.getItem('stFilter'))) ss.setItem('stFilter', 'all');
     const draw = () => {
       const f = ss.getItem('stFilter') || 'all';
-      const list = students.filter(s => f === 'all' || String(s.cls) === f).sort((a, b) => a.cls - b.cls || a.name.localeCompare(b.name, 'uk'));
+      const list = students.filter(s => (f === 'all' && (isAdmin() || clsList.includes(s.cls))) || String(s.cls) === f).sort((a, b) => a.cls - b.cls || a.name.localeCompare(b.name, 'uk'));
       $app.innerHTML = `
-        <div class="page-head"><div><h1>Учні</h1><p>Створення облікових записів, логіни та паролі</p></div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn light" id="promote">⬆️ Перевести в наступний клас</button><button class="btn brand" id="addBtn">＋ Додати учнів</button></div></div>
+        <div class="page-head"><div><h1>Учні</h1><p>${isAdmin() ? 'Створення облікових записів, логіни та паролі' : 'Учні ваших класів: логіни та паролі'}</p></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">${isAdmin() ? `<button class="btn light" id="promote">⬆️ Перевести в наступний клас</button>` : ''}${clsList.length ? `<button class="btn brand" id="addBtn">＋ Додати учнів</button>` : ''}</div></div>
         <div class="toolbar">
-          <select class="input" id="fCls"><option value="all">Усі класи</option>${CATALOG.map(k => `<option value="${k.cls}" ${f == k.cls ? 'selected' : ''}>${k.cls} клас</option>`).join('')}</select>
+          <select class="input" id="fCls"><option value="all">${isAdmin() ? 'Усі класи' : 'Усі мої класи'}</option>${clsList.map(c => `<option value="${c}" ${f == c ? 'selected' : ''}>${c} клас</option>`).join('')}</select>
           <span class="tag">${list.length} ${plural(list.length, 'учень', 'учні', 'учнів')}</span>
           <button class="btn light sm" id="cardsBtn" ${list.length ? '' : 'disabled'}>🖨 Картки з логінами</button>
         </div>
         <div class="card table-wrap">${list.length ? `<table class="tbl"><thead><tr><th>Учень</th><th class="c">Клас</th><th>Логін</th><th>Пароль</th><th></th></tr></thead><tbody>
           ${list.map(s => `<tr><td><b>${esc(s.name)}</b></td><td class="c">${s.cls}</td><td class="pw">${esc(s.login)}</td><td class="pw">${esc(s.password || '—')}</td>
-            <td style="text-align:right"><button class="btn light sm" data-edit="${s.uid}">✏️</button> <button class="btn danger sm" data-del="${s.uid}">🗑</button></td></tr>`).join('')}
+            <td style="text-align:right"><button class="btn light sm" data-edit="${s.uid}" title="Редагувати">✏️</button>${isAdmin() ? ` <button class="btn danger sm" data-del="${s.uid}" title="Видалити">🗑</button>` : ''}</td></tr>`).join('')}
           </tbody></table>` : `<div class="empty"><span class="e">🧑‍🎓</span>Учнів ще немає. Натисніть «Додати учнів».</div>`}</div>`;
       $app.querySelector('#fCls').onchange = e => { ss.setItem('stFilter', e.target.value); draw(); };
-      $app.querySelector('#addBtn').onclick = addDialog;
-      $app.querySelector('#promote').onclick = promoteDialog;
+      if ($app.querySelector('#addBtn')) $app.querySelector('#addBtn').onclick = addDialog;
+      if ($app.querySelector('#promote')) $app.querySelector('#promote').onclick = promoteDialog;
       $app.querySelector('#cardsBtn').onclick = () => cardsDialog(list);
       $app.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
         const s = students.find(x => x.uid === b.dataset.del);
@@ -500,11 +604,12 @@
       $app.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
         const s = students.find(x => x.uid === b.dataset.edit);
         modal(`<h2>Редагувати</h2><div class="field"><label>Прізвище та ім’я</label><input class="input" id="eName" value="${esc(s.name)}"></div>
-          <div class="field"><label>Клас</label><select class="input" id="eCls">${CATALOG.map(k => `<option ${k.cls === s.cls ? 'selected' : ''}>${k.cls}</option>`).join('')}</select></div>
-          <p class="muted" style="margin-top:12px;font-size:14px">Логін і пароль не змінюються. Якщо учень забув пароль — він показаний у таблиці.</p>
+          ${isAdmin() ? `<div class="field"><label>Клас</label><select class="input" id="eCls">${CATALOG.map(k => `<option ${k.cls === s.cls ? 'selected' : ''}>${k.cls}</option>`).join('')}</select></div>` : ''}
+          <p class="muted" style="margin-top:12px;font-size:14px">Логін і пароль не змінюються. Якщо учень забув пароль — він показаний у таблиці.${isAdmin() ? '' : ' Змінити клас або видалити учня може адміністратор.'}</p>
           <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="eSave">Зберегти</button></div>`,
           (box, close) => box.querySelector('#eSave').onclick = async () => {
-            const data = { name: box.querySelector('#eName').value.trim() || s.name, cls: +box.querySelector('#eCls').value };
+            const data = { name: box.querySelector('#eName').value.trim() || s.name };
+            if (box.querySelector('#eCls')) data.cls = +box.querySelector('#eCls').value;
             await Store.updateStudent(s.uid, data); Object.assign(s, data); close(); draw(); toast('Збережено');
           }, { wide: false });
       });
@@ -512,7 +617,7 @@
     function addDialog() {
       const f = ss.getItem('stFilter');
       modal(`<h2>Додати учнів</h2>
-        <div class="field"><label>Клас</label><select class="input" id="aCls">${CATALOG.map(k => `<option ${String(k.cls) === f ? 'selected' : ''}>${k.cls}</option>`).join('')}</select></div>
+        <div class="field"><label>Клас</label><select class="input" id="aCls">${clsList.map(c => `<option ${String(c) === f ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
         <div class="field"><label>Прізвища та імена — по одному в рядку</label><textarea class="input" id="aNames" rows="8" placeholder="Іваненко Марія&#10;Петренко Андрій"></textarea></div>
         <div class="form-error" id="aErr"></div>
         <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="aGo">Створити облікові записи</button></div>`,
@@ -565,17 +670,20 @@
 
   /* ---------------- вчитель: результати ---------------- */
   async function renderResults(clsArg, courseArg) {
-    const ready = CATALOG.flatMap(k => k.subjects.filter(s => s.ready).map(s => ({ cls: k.cls, s })));
-    const cls = +(clsArg || ss.getItem('rsCls') || (ready[0] && ready[0].cls) || 2);
-    const k = classInfo(cls);
-    let subj = (k && k.subjects.find(s => s.id === courseArg)) || null;
-    if (!subj && k && courseArg) { const m = catalogSubject(courseArg); if (m && m.archived && m.cls === cls) subj = m; }
-    if (!subj && k) subj = k.subjects.find(s => s.ready);
+    const classes = myClasses().filter(c => visibleSubjects(c).length || isAdmin());
+    const ready = classes.flatMap(k => visibleSubjects(k).filter(s => s.ready).map(s => ({ cls: k.cls, s })));
+    let cls = +(clsArg || ss.getItem('rsCls') || (ready[0] && ready[0].cls) || 2);
+    if (!classes.some(c => c.cls === cls)) cls = ready[0] ? ready[0].cls : (classes[0] ? classes[0].cls : cls);
+    const k = classes.find(c => c.cls === cls);
+    const subs = k ? (isAdmin() ? k.subjects : visibleSubjects(k)) : [];
+    let subj = subs.find(s => s.id === courseArg) || null;
+    if (!subj && k && courseArg) { const m = catalogSubject(courseArg); if (m && m.archived && m.cls === cls && canCourse(m.id)) subj = m; }
+    if (!subj) subj = subs.find(s => s.ready);
     ss.setItem('rsCls', cls);
     const head = `<div class="page-head"><div><h1>Результати</h1><p>Найкращі зараховані оцінки кожного учня</p></div></div>
       <div class="toolbar">
-        <select class="input" id="rCls">${CATALOG.map(c => `<option value="${c.cls}" ${c.cls === cls ? 'selected' : ''}>${c.cls} клас</option>`).join('')}</select>
-        <select class="input" id="rSub">${(k ? k.subjects : []).map(s => `<option value="${s.id}" ${subj && s.id === subj.id ? 'selected' : ''} ${s.ready ? '' : 'disabled'}>${esc(s.name)}${s.ready ? '' : ' (готується)'}</option>` + (s.archive || []).map(a => `<option value="${a.course}" ${subj && a.course === subj.id ? 'selected' : ''}>${esc(s.name)} — архів: ${esc(a.label || a.course)}</option>`).join('')).join('')}</select>
+        <select class="input" id="rCls">${classes.map(c => `<option value="${c.cls}" ${c.cls === cls ? 'selected' : ''}>${c.cls} клас</option>`).join('')}</select>
+        <select class="input" id="rSub">${subs.map(s => `<option value="${s.id}" ${subj && s.id === subj.id ? 'selected' : ''} ${s.ready ? '' : 'disabled'}>${esc(s.name)}${s.ready ? '' : ' (готується)'}</option>` + (s.archive || []).map(a => `<option value="${a.course}" ${subj && a.course === subj.id ? 'selected' : ''}>${esc(s.name)} — архів: ${esc(a.label || a.course)}</option>`).join('')).join('')}</select>
         <span id="rTools"></span>
       </div>`;
     $app.innerHTML = head + '<div class="loader"><span></span></div>';
@@ -658,6 +766,141 @@
         });
       }, { wide: true });
     });
+  }
+
+  /* ---------------- заявка вчителя очікує підтвердження ---------------- */
+  function renderPending() {
+    $app.innerHTML = `<div class="card result-card" style="max-width:620px;margin:30px auto">
+      <div class="m-emoji" style="font-size:64px">⏳</div>
+      <h2>Заявку надіслано</h2>
+      <p style="font-weight:700;color:var(--ink-2);margin-top:8px">${esc(user.name)}, адміністратор має підтвердити ваш обліковий запис і призначити предмети.
+        Після цього тут з’являться ваші класи, учні та результати.</p>
+      <div class="m-actions" style="display:flex;gap:10px;justify-content:center;margin-top:20px"><button class="btn brand" id="pRe">🔄 Перевірити ще раз</button></div></div>`;
+    $app.querySelector('#pRe').onclick = () => location.reload();
+  }
+
+  /* ---------------- вибір предметів для вчителя ---------------- */
+  function subjectPicker(selectedIds) {
+    const sel = new Set(selectedIds || []);
+    return `<div class="subj-pick">${CATALOG.map((k, ki) => k.subjects.length ? `
+      <div class="sp-class" style="--c:${esc(k.color)}"><b class="sp-num">${k.cls} клас</b>
+        ${k.subjects.map((sj, si) => `<label class="sp-item"><input type="checkbox" data-sp="${ki}:${si}" ${subjectIds(sj).some(x => sel.has(x)) ? 'checked' : ''}>
+          <span>${esc(sj.icon)} ${esc(sj.name)}${sj.ready ? '' : ' <small class="muted">(готується)</small>'}</span></label>`).join('')}
+      </div>` : '').join('')}</div>`;
+  }
+  function readPicker(box) {
+    const subjects = new Set(), classes = new Set();
+    box.querySelectorAll('[data-sp]:checked').forEach(c => {
+      const [ki, si] = c.dataset.sp.split(':').map(Number); const k = CATALOG[ki], sj = k.subjects[si];
+      subjectIds(sj).forEach(x => subjects.add(x)); classes.add(k.cls);
+    });
+    return { subjects: [...subjects], classes: [...classes].sort((a, b) => a - b) };
+  }
+  function teacherSubjectTags(ids) {
+    const set = new Set(ids || []), out = [];
+    CATALOG.forEach(k => k.subjects.forEach(sj => { if (subjectIds(sj).some(x => set.has(x))) out.push(`<span class="tag">${k.cls} кл. · ${esc(sj.icon)} ${esc(sj.name)}</span>`); }));
+    return out.length ? out.join(' ') : '<span class="muted">предметів не призначено</span>';
+  }
+
+  /* ---------------- адміністратор: вчителі ---------------- */
+  async function renderTeachers() {
+    $app.innerHTML = '<div class="loader"><span></span></div>';
+    let teachers = await Store.listTeachers();
+    const draw = () => {
+      const pending = teachers.filter(t => t.pending), active = teachers.filter(t => !t.pending && !t.disabled), off = teachers.filter(t => !t.pending && t.disabled);
+      const by = a => a.slice().sort((x, y) => String(x.name).localeCompare(String(y.name), 'uk'));
+      const row = t => `<div class="card teacher-row ${t.disabled ? 'is-off' : ''}">
+          <span class="avatar">${esc(initials(t.name))}</span>
+          <div class="tr-body"><h3>${esc(t.name)} ${t.disabled ? '<span class="tag">⛔ доступ вимкнено</span>' : ''}</h3><div class="muted tr-mail">${esc(t.email)}</div>
+            <div class="tr-subs">${t.pending ? '<b>Просить:</b> ' + teacherSubjectTags(t.requested) : teacherSubjectTags(t.subjects)}</div>
+            ${t.pending && t.note ? `<div class="muted" style="font-size:14px;margin-top:6px">💬 ${esc(t.note)}</div>` : ''}</div>
+          <div class="tr-actions">${t.pending
+            ? `<button class="btn brand sm" data-ok="${t.uid}">✅ Підтвердити</button><button class="btn danger sm" data-rej="${t.uid}">✕ Відхилити</button>`
+            : `<button class="btn light sm" data-ed="${t.uid}">✏️ Предмети</button><button class="btn light sm" data-rs="${t.uid}" title="Надіслати лист для скидання пароля">✉️ Пароль</button>
+               ${t.disabled ? `<button class="btn light sm" data-on="${t.uid}">✅ Увімкнути</button>` : `<button class="btn danger sm" data-off="${t.uid}">⛔ Вимкнути</button>`}`}</div>
+        </div>`;
+      $app.innerHTML = `
+        <div class="page-head"><div><h1>Вчителі</h1><p>Кожен вчитель бачить і змінює лише свої предмети та учнів своїх класів. Ви — адміністратор з усіма повноваженнями.</p></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn brand" id="addT">＋ Додати вчителя</button></div></div>
+        ${pending.length ? `<h2 class="adm-h">📨 Заявки на реєстрацію <span class="tag">${pending.length}</span></h2>${by(pending).map(row).join('')}` : ''}
+        <h2 class="adm-h">👩‍🏫 Вчителі <span class="tag">${active.length}</span></h2>
+        ${active.length ? by(active).map(row).join('') : `<div class="card empty"><span class="e">👩‍🏫</span>Вчителів ще немає. Натисніть «Додати вчителя»${C.teacherSelfSignup ? ' або попросіть колег подати заявку на сторінці входу' : ''}.</div>`}
+        ${off.length ? `<h2 class="adm-h">⛔ Вимкнені <span class="tag">${off.length}</span></h2>${by(off).map(row).join('')}` : ''}
+        <div class="card pad" style="margin-top:18px;font-weight:700;color:var(--ink-2);font-size:14px">
+          💡 Вчитель може: переглядати презентації, тести й ігри своїх предметів, бачити результати своїх предметів і видаляти спроби (щоб дозволити перескладання),
+          додавати учнів у свої класи та виправляти їхні імена. Лише адміністратор може видаляти учнів, переводити їх у наступний клас, змінювати список предметів і керувати вчителями.
+        </div>`;
+      const find = uid => teachers.find(t => t.uid === uid);
+      $app.querySelector('#addT').onclick = addDialog;
+      $app.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => editDialog(find(b.dataset.ed)));
+      $app.querySelectorAll('[data-ok]').forEach(b => b.onclick = () => editDialog(find(b.dataset.ok), true));
+      $app.querySelectorAll('[data-rej]').forEach(b => b.onclick = () => {
+        const t = find(b.dataset.rej);
+        modal(`<div class="m-emoji">✕</div><h2>Відхилити заявку?</h2><p><b>${esc(t.name)}</b> (${esc(t.email)}) не отримає доступу до сайту.</p>
+          <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn danger" data-close id="rjGo">Відхилити</button></div>`,
+          box => box.querySelector('#rjGo').onclick = async () => { await Store.deleteTeacher(t.uid); teachers = teachers.filter(x => x.uid !== t.uid); draw(); toast('Заявку відхилено'); });
+      });
+      $app.querySelectorAll('[data-off]').forEach(b => b.onclick = () => {
+        const t = find(b.dataset.off);
+        modal(`<div class="m-emoji">⛔</div><h2>Вимкнути доступ?</h2><p><b>${esc(t.name)}</b> більше не зможе увійти. Результати учнів не зміняться. Доступ можна буде увімкнути знову.</p>
+          <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn danger" data-close id="offGo">Вимкнути</button></div>`,
+          box => box.querySelector('#offGo').onclick = async () => { await Store.updateTeacher(t.uid, { disabled: true }); t.disabled = true; draw(); toast('Доступ вимкнено'); });
+      });
+      $app.querySelectorAll('[data-on]').forEach(b => b.onclick = async () => { const t = find(b.dataset.on); await Store.updateTeacher(t.uid, { disabled: false }); t.disabled = false; draw(); toast('Доступ увімкнено'); });
+      $app.querySelectorAll('[data-rs]').forEach(b => b.onclick = () => {
+        const t = find(b.dataset.rs);
+        modal(`<div class="m-emoji">✉️</div><h2>Скинути пароль?</h2><p>На пошту <b>${esc(t.email)}</b> буде надіслано лист із посиланням для встановлення нового пароля.</p>
+          <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" data-close id="rsGo">Надіслати лист</button></div>`,
+          box => box.querySelector('#rsGo').onclick = async () => { try { await Store.sendReset(t.email); toast('Лист надіслано'); } catch (e) { toast('Помилка: ' + e.message); } });
+      });
+    };
+    function addDialog() {
+      modal(`<h2>Додати вчителя</h2>
+        <div class="field"><label>Прізвище, ім’я та по батькові</label><input class="input" id="tName" placeholder="Коваленко Ольга Петрівна"></div>
+        <div class="field"><label>Пошта (логін для входу)</label><input class="input" id="tMail" type="email" autocapitalize="off" spellcheck="false" placeholder="olha@example.com"></div>
+        <div class="field"><label>Початковий пароль (вчитель зможе змінити його кнопкою 🔑)</label><input class="input pw" id="tPw" value="${esc(StoreUtils.makeTeacherPassword())}"></div>
+        <div class="field"><label>Предмети вчителя</label>${subjectPicker([])}</div>
+        <div class="form-error" id="tErr"></div>
+        <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="tGo">Створити обліковий запис</button></div>`,
+        (box, close) => box.querySelector('#tGo').onclick = async () => {
+          const name = box.querySelector('#tName').value.trim(), email = box.querySelector('#tMail').value.trim(), password = box.querySelector('#tPw').value.trim();
+          const err = box.querySelector('#tErr');
+          if (!name) { err.textContent = 'Введіть ім’я вчителя'; return; }
+          if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { err.textContent = 'Введіть правильну адресу пошти'; return; }
+          if (password.length < 8) { err.textContent = 'Пароль має містити щонайменше 8 символів'; return; }
+          const pick = readPicker(box);
+          const b = box.querySelector('#tGo'); b.disabled = true; b.textContent = 'Створюємо…';
+          try {
+            const t = await Store.createTeacher(Object.assign({ name, email, password }, pick));
+            teachers.push(t); close(); draw(); credsDialog(t, password);
+          } catch (e) { err.textContent = e.message; b.disabled = false; b.textContent = 'Створити обліковий запис'; }
+        }, { wide: true });
+    }
+    function credsDialog(t, password) {
+      const txt = `Портал «${C.siteTitle}»: ${location.origin + location.pathname}\nЛогін (пошта): ${t.email}\nПароль: ${password}\nПісля входу змініть пароль кнопкою «🔑 Пароль».`;
+      modal(`<div class="m-emoji">✅</div><h2>Вчителя додано</h2>
+        <div class="lc" style="text-align:left;margin:12px 0"><b>${esc(t.name)}</b><br>Сайт: <code>${esc(location.origin + location.pathname)}</code><br>Логін: <code>${esc(t.email)}</code><br>Пароль: <code>${esc(password)}</code></div>
+        <p class="muted" style="font-size:14px;font-weight:700">Пароль показано лише зараз — скопіюйте його й передайте вчителю.</p>
+        <div class="m-actions"><button class="btn light" id="cpT">📋 Копіювати</button><button class="btn brand" data-close>Готово</button></div>`,
+        box => box.querySelector('#cpT').onclick = () => navigator.clipboard.writeText(txt).then(() => toast('Скопійовано')));
+    }
+    function editDialog(t, approve) {
+      modal(`<h2>${approve ? 'Підтвердити заявку' : 'Предмети вчителя'}</h2>
+        <div class="field"><label>Ім’я</label><input class="input" id="eTName" value="${esc(t.name)}"></div>
+        <p class="muted" style="font-weight:700;margin:-4px 0 10px">${esc(t.email)}</p>
+        <div class="field"><label>Предмети${approve ? ' (позначено ті, які просить вчитель)' : ''}</label>${subjectPicker(approve ? t.requested : t.subjects)}</div>
+        <div class="form-error" id="eTErr"></div>
+        <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="eTGo">${approve ? '✅ Підтвердити' : 'Зберегти'}</button></div>`,
+        (box, close) => box.querySelector('#eTGo').onclick = async () => {
+          const pick = readPicker(box);
+          const data = Object.assign({ name: box.querySelector('#eTName').value.trim() || t.name }, pick);
+          if (approve) data.pending = false, data.disabled = false;
+          const b = box.querySelector('#eTGo'); b.disabled = true;
+          try { await Store.updateTeacher(t.uid, data); Object.assign(t, data); close(); draw(); toast(approve ? 'Вчителя підтверджено' : 'Збережено'); }
+          catch (e) { box.querySelector('#eTErr').textContent = e.message; b.disabled = false; }
+        }, { wide: true });
+    }
+    draw();
   }
 
   /* ---------------- вчитель: предмети за класами ---------------- */

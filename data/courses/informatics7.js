@@ -17,5 +17,6 @@ window.COURSES.informatics7 = {
     approval: 'Рекомендовано Міністерством освіти і науки України (наказ МОН від 05.02.2024 № 124).'
   },
   parts: ['informatics7/s1.js', 'informatics7/s2.js', 'informatics7/s3.js', 'informatics7/s4.js', 'informatics7/s5.js'],
+  ext: ['informatics7/x1.js', 'informatics7/x2.js', 'informatics7/x3.js'],
   sections: []
 };

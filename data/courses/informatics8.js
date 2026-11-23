@@ -17,5 +17,6 @@ window.COURSES.informatics8 = {
     approval: 'Рекомендовано Міністерством освіти і науки України (наказ МОН від 21.02.2025 № 347).'
   },
   parts: ['informatics8/s1.js', 'informatics8/s2.js', 'informatics8/s3.js', 'informatics8/s4.js', 'informatics8/s5.js'],
+  ext: ['informatics8/x1.js', 'informatics8/x2.js'],
   sections: []
 };

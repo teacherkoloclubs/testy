@@ -17,5 +17,7 @@ window.COURSES.informatics4 = {
     approval: 'Рекомендовано МОН України (наказ від 27.01.2026 № 111).'
   },
   parts: ['informatics4/s1.js', 'informatics4/s2.js', 'informatics4/s3.js', 'informatics4/s4.js'],
+  ext: ['informatics4/x1.js', 'informatics4/x2.js', 'informatics4/x3.js'],
+  games: ['informatics4/g1.js'],
   sections: []
 };

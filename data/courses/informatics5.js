@@ -16,5 +16,6 @@ window.COURSES.informatics5 = {
     approval: 'Рекомендовано Міністерством освіти і науки України.'
   },
   parts: ['informatics5/s1.js', 'informatics5/s2.js', 'informatics5/s3.js', 'informatics5/s4.js'],
+  ext: ['informatics5/x1.js', 'informatics5/x2.js', 'informatics5/x3.js', 'informatics5/x4.js'],
   sections: []
 };

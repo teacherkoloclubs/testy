@@ -17,5 +17,6 @@ window.COURSES.informatics9 = {
     approval: 'Рекомендовано Міністерством освіти і науки України (наказ МОН від 27.01.2026 № 110).'
   },
   parts: ['informatics9/s1.js', 'informatics9/s2.js', 'informatics9/s3.js', 'informatics9/s4.js', 'informatics9/s5.js'],
+  ext: ['informatics9/x1.js', 'informatics9/x2.js'],
   sections: []
 };

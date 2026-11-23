@@ -372,5 +372,23 @@
     return { destroy() { document.removeEventListener('keydown', key); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } };
   }
 
-  window.Slides = { run };
+  /* Доповнення уроків: файли data/courses/<курс>/xN.js додають слайди в наявні уроки.
+     window.EXT[курс][урок] = [ { at: n, ...слайд }, ... ] — вставити після n-го (з 1) слайда оригіналу;
+     без at — перед словничком (або в кінець). */
+  function applyExt(course) {
+    const ext = (window.EXT || {})[course.id]; if (!ext) return;
+    course.sections.forEach(sec => sec.lessons.forEach(l => {
+      const add = ext[l.id]; if (!add || l._ext) return;
+      const orig = l.slides; const wi = orig.findIndex(x => x.type === 'words');
+      const def = wi >= 0 ? wi : orig.length;
+      const out = [];
+      for (let k = 0; k <= orig.length; k++) {
+        add.filter(x => (x.at == null ? def : x.at) === k).forEach(x => out.push(x));
+        if (k < orig.length) out.push(orig[k]);
+      }
+      l.slides = out; l._ext = true; l.v = 2;
+    }));
+  }
+
+  window.Slides = { run, applyExt };
 })();

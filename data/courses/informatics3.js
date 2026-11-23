@@ -18,5 +18,7 @@ window.COURSES.informatics3 = {
     approval: 'Рекомендовано МОН України (наказ від 07.01.2025 № 22).'
   },
   parts: ['informatics3/s1.js', 'informatics3/s2.js', 'informatics3/s3.js', 'informatics3/s4.js'],
+  ext: ['informatics3/x1.js', 'informatics3/x2.js', 'informatics3/x3.js'],
+  games: ['informatics3/g1.js'],
   sections: []
 };

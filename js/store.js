@@ -19,9 +19,23 @@
     login = String(login).trim().toLowerCase();
     return login.includes('@') ? login : login + '@' + C.studentEmailDomain;
   }
-  function isTeacherEmail(email) {
-    return (C.teacherEmails || []).map(e => e.toLowerCase()).includes(String(email || '').toLowerCase());
+  /* Адміністратор — пошта з config.adminEmails (або давнього teacherEmails) */
+  function isAdminEmail(email) {
+    return (C.adminEmails || C.teacherEmails || []).map(e => e.toLowerCase()).includes(String(email || '').toLowerCase());
   }
+  function makeTeacherPassword() {
+    const a = 'abcdefghjkmnpqrstuvwxyz', d = '23456789';
+    let p = ''; for (let i = 0; i < 6; i++) p += a[Math.floor(Math.random() * a.length)];
+    for (let i = 0; i < 4; i++) p += d[Math.floor(Math.random() * d.length)];
+    return p;
+  }
+  const authError = e => {
+    const m = { 'auth/email-already-in-use': 'Ця пошта вже зареєстрована на сайті.', 'auth/invalid-email': 'Неправильна адреса пошти.',
+      'auth/weak-password': 'Пароль занадто простий (мінімум 6 символів).', 'auth/wrong-password': 'Неправильний поточний пароль.',
+      'auth/invalid-credential': 'Неправильний поточний пароль.', 'auth/invalid-login-credentials': 'Неправильний поточний пароль.',
+      'auth/too-many-requests': 'Забагато спроб. Зачекайте кілька хвилин.', 'auth/user-not-found': 'Користувача з такою поштою не знайдено.' };
+    return new Error(m[e.code] || e.message);
+  };
 
   const hasFirebase = !!(C.firebase && C.firebase.apiKey && window.firebase);
 
@@ -33,22 +47,66 @@
     const auth = firebase.auth();
     const db = firebase.firestore();
     let secondary = null;
+    let me = null;            // профіль користувача, що увійшов
+    let registering = false;  // під час самореєстрації вчителя профіль ще не створено
+    let authCb = null;
+    const sec = () => (secondary = secondary || firebase.initializeApp(C.firebase, 'secondary'));
+
+    async function resolve(u) {
+      if (!u) { me = null; return authCb(null); }
+      if (isAdminEmail(u.email)) {
+        me = { uid: u.uid, role: 'admin', name: u.displayName || 'Адміністратор', email: u.email };
+        return authCb(me);
+      }
+      try {
+        const snap = await db.collection('users').doc(u.uid).get();
+        if (!snap.exists) { await auth.signOut(); return authCb(null, 'Обліковий запис не знайдено або вимкнено. Зверніться до вчителя.'); }
+        const d = snap.data();
+        if (d.role === 'teacher') {
+          if (d.disabled) { await auth.signOut(); return authCb(null, 'Доступ вчителя вимкнено. Зверніться до адміністратора.'); }
+          me = d.pending
+            ? { uid: u.uid, role: 'pending', name: d.name, email: d.email }
+            : { uid: u.uid, role: 'teacher', name: d.name, email: d.email, subjects: d.subjects || [], classes: (d.classes || []).map(Number) };
+          return authCb(me);
+        }
+        me = { uid: u.uid, role: 'student', name: d.name, cls: d.cls, login: d.login };
+        authCb(me);
+      } catch (e) { authCb(null, 'Не вдалося завантажити профіль: ' + e.message); }
+    }
 
     return {
       mode: 'firebase',
       onAuth(cb) {
-        auth.onAuthStateChanged(async (u) => {
-          if (!u) return cb(null);
-          if (isTeacherEmail(u.email)) {
-            return cb({ uid: u.uid, role: 'teacher', name: u.displayName || 'Вчитель', email: u.email });
-          }
-          try {
-            const snap = await db.collection('users').doc(u.uid).get();
-            if (!snap.exists) { await auth.signOut(); return cb(null, 'Обліковий запис не знайдено або вимкнено. Зверніться до вчителя.'); }
-            const d = snap.data();
-            cb({ uid: u.uid, role: 'student', name: d.name, cls: d.cls, login: d.login });
-          } catch (e) { cb(null, 'Не вдалося завантажити профіль: ' + e.message); }
-        });
+        authCb = cb;
+        auth.onAuthStateChanged(u => { if (!registering) resolve(u); });
+      },
+      /* Самостійна реєстрація вчителя: заявка, яку підтверджує адміністратор */
+      async registerTeacher(f) {
+        registering = true;
+        try {
+          const cred = await auth.createUserWithEmailAndPassword(String(f.email).trim(), f.password);
+          await db.collection('users').doc(cred.user.uid).set({
+            role: 'teacher', pending: true, name: String(f.name).trim(), email: cred.user.email,
+            subjects: [], classes: [], requested: f.requested || [], note: String(f.note || '').slice(0, 300),
+            createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+          registering = false;
+          await resolve(cred.user);
+        } catch (e) {
+          registering = false;
+          /* обліковий запис створено, а профіль — ні: прибираємо, щоб можна було спробувати ще раз */
+          if (auth.currentUser) { try { await auth.currentUser.delete(); } catch (x) { await auth.signOut(); } }
+          throw e.code ? authError(e) : e;
+        }
+      },
+      async sendReset(email) {
+        try { await auth.sendPasswordResetEmail(String(email).trim()); } catch (e) { throw authError(e); }
+      },
+      async changePassword(oldPw, newPw) {
+        const u = auth.currentUser;
+        try {
+          await u.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(u.email, oldPw));
+          await u.updatePassword(newPw);
+        } catch (e) { throw authError(e); }
       },
       async signIn(login, password) {
         try { await auth.signInWithEmailAndPassword(loginToEmail(login), password); }
@@ -62,17 +120,45 @@
       signOut() { return auth.signOut(); },
 
       async listStudents() {
-        const qs = await db.collection('users').get();
-        return qs.docs.map(d => Object.assign({ uid: d.id }, d.data())).filter(s => s.role === 'student');
+        let docs;
+        if (me && me.role === 'teacher') {
+          /* вчитель бачить лише учнів своїх класів */
+          docs = [];
+          const cl = me.classes.slice();
+          for (let i = 0; i < cl.length; i += 30) {
+            const qs = await db.collection('users').where('cls', 'in', cl.slice(i, i + 30)).get();
+            docs = docs.concat(qs.docs);
+          }
+        } else docs = (await db.collection('users').get()).docs;
+        return docs.map(d => Object.assign({ uid: d.id }, d.data())).filter(s => s.role === 'student');
       },
+      async listTeachers() {
+        const qs = await db.collection('users').where('role', '==', 'teacher').get();
+        return qs.docs.map(d => Object.assign({ uid: d.id }, d.data()));
+      },
+      async createTeacher(f) {
+        const password = f.password || makeTeacherPassword();
+        let cred;
+        try { cred = await sec().auth().createUserWithEmailAndPassword(String(f.email).trim(), password); }
+        catch (e) {
+          if (e.code === 'auth/email-already-in-use') throw new Error('Ця пошта вже зареєстрована. Якщо вчитель подав заявку сам — підтвердіть її в списку нижче; якщо доступ було вимкнено — увімкніть його.');
+          throw authError(e);
+        }
+        await sec().auth().signOut();
+        const data = { role: 'teacher', pending: false, disabled: false, name: String(f.name).trim(), email: cred.user.email,
+          subjects: f.subjects || [], classes: f.classes || [], createdAt: firebase.firestore.FieldValue.serverTimestamp() };
+        await db.collection('users').doc(cred.user.uid).set(data);
+        return Object.assign({ uid: cred.user.uid, password }, data);
+      },
+      async updateTeacher(uid, data) { await db.collection('users').doc(uid).update(data); },
+      async deleteTeacher(uid) { await db.collection('users').doc(uid).delete(); },
       async createStudent(name, cls) {
-        if (!secondary) secondary = firebase.initializeApp(C.firebase, 'secondary');
         for (let attempt = 0; attempt < 5; attempt++) {
           const login = makeLogin(name, cls), password = makePassword();
           try {
-            const cred = await secondary.auth().createUserWithEmailAndPassword(loginToEmail(login), password);
+            const cred = await sec().auth().createUserWithEmailAndPassword(loginToEmail(login), password);
             const uid = cred.user.uid;
-            await secondary.auth().signOut();
+            await sec().auth().signOut();
             await db.collection('users').doc(uid).set({ role: 'student', name: name.trim(), cls: Number(cls), login, password, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
             return { uid, login, password };
           } catch (e) {
@@ -151,5 +237,6 @@
   }
 
   const configured = !!(C.firebase && C.firebase.apiKey);
+  window.StoreUtils = { makeTeacherPassword, isAdminEmail };
   window.Store = hasFirebase ? FirebaseStore() : configured ? BrokenStore() : SetupStore();
 })();

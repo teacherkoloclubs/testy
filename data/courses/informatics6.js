@@ -16,5 +16,6 @@ window.COURSES.informatics6 = {
     approval: 'Рекомендовано Міністерством освіти і науки України (наказ МОН від 08.03.2023 № 254).'
   },
   parts: ['informatics6/s1.js', 'informatics6/s2.js', 'informatics6/s3.js', 'informatics6/s4.js', 'informatics6/s5.js'],
+  ext: ['informatics6/x1.js', 'informatics6/x2.js', 'informatics6/x3.js', 'informatics6/x4.js'],
   sections: []
 };

@@ -1,39 +1,78 @@
 rules_version = '2';
 // Правила безпеки бази даних. Вставте цей текст у Firebase Console →
 // Firestore Database → Rules і натисніть Publish.
-// Пошта вчителя має збігатися з js/config.js.
+// Пошта адміністратора має збігатися з adminEmails у js/config.js.
+//
+// Ролі:
+//   адміністратор — пошта зі списку нижче; має всі повноваження;
+//   вчитель       — профіль users/{uid} з role: 'teacher'; бачить і змінює лише свої предмети
+//                   (поле subjects) та учнів своїх класів (поле classes);
+//   учень         — профіль users/{uid} з role: 'student'.
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
-    function isTeacher() {
+    function isAdmin() {
       return signedIn() && request.auth.token.email in ['teacher.kolo.clubs@gmail.com'];
     }
+    function me() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function hasProfile() { return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)); }
+    // Підтверджений і не вимкнений вчитель
+    function isTeacher() {
+      return hasProfile() && me().role == 'teacher'
+        && me().get('pending', false) == false && me().get('disabled', false) == false;
+    }
+    function teachesClass(c) { return isTeacher() && c in me().get('classes', []); }
+    function teachesCourse(id) { return isTeacher() && id in me().get('subjects', []); }
+    function isStudent() { return hasProfile() && me().role == 'student'; }
 
-    // Профілі учнів: створює і змінює лише вчитель; учень бачить тільки свій
     match /users/{uid} {
-      allow read: if isTeacher() || (signedIn() && request.auth.uid == uid);
-      allow write: if isTeacher();
+      // свій профіль; адміністратор — усі; вчитель — учнів своїх класів
+      allow read: if isAdmin()
+        || (signedIn() && request.auth.uid == uid)
+        || teachesClass(resource.data.get('cls', -1));
+
+      // адміністратор створює будь-кого; вчитель — учнів лише у своїх класах
+      allow create: if isAdmin()
+        || (request.resource.data.role == 'student' && teachesClass(request.resource.data.cls))
+        // самостійна заявка вчителя: лише для себе, без предметів, очікує підтвердження
+        || (signedIn() && request.auth.uid == uid
+            && request.resource.data.role == 'teacher'
+            && request.resource.data.pending == true
+            && request.resource.data.subjects.size() == 0
+            && request.resource.data.classes.size() == 0
+            && request.resource.data.email == request.auth.token.email
+            && request.resource.data.keys().hasOnly(['role', 'pending', 'name', 'email', 'subjects', 'classes', 'requested', 'note', 'createdAt']));
+
+      // вчитель може змінювати ім’я учня свого класу, але не логін, пароль чи роль
+      allow update: if isAdmin()
+        || (resource.data.role == 'student' && teachesClass(resource.data.cls)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']));
+
+      // видаляє лише адміністратор; заявник може відкликати власну заявку
+      allow delete: if isAdmin()
+        || (signedIn() && request.auth.uid == uid && resource.data.role == 'teacher' && resource.data.get('pending', false) == true);
     }
 
-    // Налаштування сайту (список класів і предметів): читають усі, хто увійшов; змінює вчитель
+    // Налаштування сайту (список класів і предметів): читають усі, хто увійшов; змінює адміністратор
     match /config/{doc} {
       allow read: if signedIn();
-      allow write: if isTeacher();
+      allow write: if isAdmin();
     }
 
     // Результати тестів: учень додає лише свої і бачить лише свої;
-    // вчитель бачить усі й може видаляти
+    // адміністратор бачить і видаляє всі; вчитель — лише зі своїх предметів
     match /results/{id} {
-      allow read: if isTeacher() || (signedIn() && resource.data.uid == request.auth.uid);
-      allow create: if signedIn()
+      allow read: if isAdmin()
+        || teachesCourse(resource.data.course)
+        || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if isStudent()
         && request.resource.data.uid == request.auth.uid
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && request.resource.data.score is int
         && request.resource.data.score >= 0
         && request.resource.data.score <= 12;
       allow update: if false;
-      allow delete: if isTeacher();
+      allow delete: if isAdmin() || teachesCourse(resource.data.course);
     }
   }
 }
