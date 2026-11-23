@@ -1,16 +1,92 @@
-/* Перегляд HTML-презентацій */
+/* Перегляд HTML-презентацій з інтерактивними слайдами
+   Типи слайдів: cover, def, fact, think, words, (звичайний) +
+   інтерактиви: quiz, tf, flip, input, match, order, group */
 (function () {
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
   /* **жирний** у тексті слайда */
   function rich(s) { return esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'); }
 
-  function slideHtml(s, lesson) {
+  /* детерміноване перемішування (щоб порядок не збігався з правильним) */
+  function shuffled(arr, seed) {
+    const a = arr.map((x, i) => i);
+    let s = seed || 7;
+    const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+    for (let k = 0; k < 6; k++) {
+      for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+      if (a.length < 2 || a.some((v, i) => v !== i)) break;
+    }
+    return a;
+  }
+  const IX_TYPES = ['quiz', 'tf', 'input', 'match', 'order', 'group'];
+  const IX_LABEL = { quiz: '⚡ Швидка перевірка', tf: '🕵️ Правда чи міф?', flip: '🃏 Картки-перевертні', input: '✍️ Впиши відповідь', match: '🔗 З’єднай пари', order: '🔢 Упорядкуй', group: '🗂 Розклади за групами' };
+
+  function ixHead(s) {
+    return `<div class="s-label">${IX_LABEL[s.type]}</div>${s.h && s.h !== IX_LABEL[s.type].replace(/^\S+\s/, '') ? `<h2>${esc(s.h)}</h2>` : ''}${s.p ? `<p class="ix-p">${rich(s.p)}</p>` : ''}`;
+  }
+  function fb() { return '<div class="ix-fb" aria-live="polite"></div>'; }
+
+  function ixHtml(s, n) {
+    const seed = n * 31 + 11;
+    switch (s.type) {
+      case 'quiz':
+        return `<div class="slide ix ix-quiz" data-ix="quiz" data-c="${s.c || 0}">${ixHead(s)}
+          <div class="ix-q">${rich(s.q || '')}</div>
+          <div class="ix-opts">${shuffled(s.a, seed).map(k => `<button class="ix-opt" data-k="${k}">${rich(s.a[k])}</button>`).join('')}</div>
+          ${fb()}<div class="ix-why" hidden>${rich(s.why || '')}</div></div>`;
+      case 'tf':
+        return `<div class="slide ix ix-tf" data-ix="tf">${ixHead(s)}
+          <div class="tf-list">${s.items.map((it, k) => `<div class="tf-item" data-k="${k}" data-v="${it[1] ? 1 : 0}">
+            <div class="tf-text">${rich(it[0])}</div>
+            <div class="tf-btns"><button class="tf-b" data-v="1">✅ Правда</button><button class="tf-b" data-v="0">❌ Міф</button></div>
+            <div class="tf-why" hidden>${rich(it[2] || '')}</div></div>`).join('')}</div>${fb()}</div>`;
+      case 'flip':
+        return `<div class="slide ix ix-flip" data-ix="flip">${ixHead(s)}
+          <div class="flip-grid">${s.cards.map(c => `<button class="flip-card"><span class="flip-in"><span class="flip-f">${rich(c[0])}</span><span class="flip-b">${rich(c[1])}</span></span></button>`).join('')}</div>
+          <div class="ix-hint">Натисни на картку, щоб перевернути</div></div>`;
+      case 'input': {
+        const items = s.items || [{ q: s.q, ans: s.ans, unit: s.unit }];
+        return `<div class="slide ix ix-input" data-ix="input">${ixHead(s)}
+          <div class="in-list">${items.map((it, k) => `<label class="in-row" data-k="${k}" data-ans="${esc(JSON.stringify(it.ans))}">
+            <span class="in-q">${rich(it.q)}</span>
+            <span class="in-box"><input type="text" inputmode="text" autocomplete="off" spellcheck="false"><span class="in-unit">${esc(it.unit || '')}</span></span></label>`).join('')}</div>
+          <div class="ix-actions"><button class="ix-check">Перевірити</button><button class="ix-show" hidden>Показати відповідь</button></div>
+          ${fb()}<div class="ix-why" hidden>${rich(s.why || '')}</div></div>`;
+      }
+      case 'match': {
+        const ord = shuffled(s.pairs, seed);
+        return `<div class="slide ix ix-match" data-ix="match">${ixHead(s)}
+          <div class="m-grid">${s.pairs.map((p, k) => `<div class="m-row"><div class="m-left">${rich(p[0])}</div><div class="m-slot" data-drop data-k="${k}"></div></div>`).join('')}</div>
+          <div class="chip-bank" data-drop data-bank>${ord.map(k => `<div class="chip" data-chip data-k="${k}">${rich(s.pairs[k][1])}</div>`).join('')}</div>
+          <div class="ix-actions"><button class="ix-check">Перевірити</button><button class="ix-reset">Скинути</button></div>${fb()}</div>`;
+      }
+      case 'order': {
+        const ord = shuffled(s.items, seed);
+        return `<div class="slide ix ix-order" data-ix="order">${ixHead(s)}
+          <ol class="o-list">${ord.map(k => `<li class="o-item" data-chip data-drop data-k="${k}"><span class="o-txt">${rich(s.items[k])}</span>
+            <span class="o-arrows"><button class="o-up" aria-label="Вгору">▲</button><button class="o-down" aria-label="Вниз">▼</button></span></li>`).join('')}</ol>
+          <div class="ix-actions"><button class="ix-check">Перевірити</button></div>${fb()}</div>`;
+      }
+      case 'group': {
+        const all = []; s.groups.forEach((g, gi) => g[1].forEach(t => all.push([t, gi])));
+        const ord = shuffled(all, seed);
+        return `<div class="slide ix ix-group" data-ix="group">${ixHead(s)}
+          <div class="g-boxes" style="--n:${s.groups.length}">${s.groups.map((g, gi) => `<div class="g-box" data-drop data-g="${gi}"><div class="g-name">${rich(g[0])}</div><div class="g-items"></div></div>`).join('')}</div>
+          <div class="chip-bank" data-drop data-bank>${ord.map(k => `<div class="chip" data-chip data-g="${all[k][1]}">${rich(all[k][0])}</div>`).join('')}</div>
+          <div class="ix-actions"><button class="ix-check">Перевірити</button><button class="ix-reset">Скинути</button></div>${fb()}</div>`;
+      }
+    }
+    return '';
+  }
+
+  function slideHtml(s, lesson, n) {
+    if (IX_TYPES.includes(s.type) || s.type === 'flip') return ixHtml(s, n);
     const side = s.e ? `<div class="side-emoji">${s.e}</div>` : '';
     const p = s.p ? `<p>${rich(s.p)}</p>` : '';
     const list = s.list ? `<ul class="s-list">${s.list.map(x => `<li>${rich(x)}</li>`).join('')}</ul>` : '';
-    const steps = s.steps ? `<ol class="s-steps">${s.steps.map(x => `<li>${rich(x)}</li>`).join('')}</ol>` : '';
+    const steps = s.steps ? `<ol class="s-steps">${s.steps.map(x => `<li><span>${rich(x)}</span></li>`).join('')}</ol>` : '';
     const code = s.code ? `<pre class="s-code">${esc(s.code)}</pre>` : '';
     const cards = s.cards ? `<div class="s-cards">${s.cards.map(c => `<div class="s-card"><b>${c[0]}</b>${esc(c[1])}${c[2] ? `<small>${esc(c[2])}</small>` : ''}</div>`).join('')}</div>` : '';
+    const after = s.after ? `<p class="s-after">${rich(s.after)}</p>` : '';
     switch (s.type) {
       case 'cover':
         return `<div class="slide s-cover"><div class="badge">${esc(s.badge || '')}</div><div class="cover-emoji">${s.e || '📘'}</div><h2>${esc(s.h)}</h2>${p}</div>`;
@@ -24,21 +100,208 @@
       case 'words':
         return `<div class="slide s-title" style="text-align:center;align-items:center"><div class="s-label">📖 Словничок</div><h2>${esc(s.h || 'Нові слова уроку')}</h2>
           <div class="words">${(s.words || []).map(w => `<span>${esc(w)}</span>`).join('')}</div>${p}</div>`;
+      case 'example':
+        return `<div class="slide s-example"><div class="s-label">🧩 Розв’язуємо разом</div><h2>${esc(s.h)}</h2>${p}
+          ${(s.steps || []).length ? `<ol class="ex-steps">${s.steps.map((x, k) => `<li${k ? ' hidden' : ''}><span>${rich(x)}</span></li>`).join('')}</ol>${s.steps.length > 1 ? '<button class="reveal-btn" data-next-step>Наступний крок →</button>' : ''}` : ''}
+          ${code}${s.ans ? `<div class="ex-ans" hidden>✅ ${rich(s.ans)}</div>` : ''}</div>`;
       default:
-        return `<div class="slide"><div class="s-row"><div><h2>${esc(s.h)}</h2>${p}${code}${list}${steps}${cards}</div>${s.cards ? '' : side}</div></div>`;
+        return `<div class="slide"><div class="s-row"><div><h2>${esc(s.h)}</h2>${p}${code}${list}${steps}${cards}${after}</div>${s.cards ? '' : side}</div></div>`;
+    }
+  }
+
+  /* ---------- нормалізація відповіді для «Впиши відповідь» ---------- */
+  function norm(v) {
+    return String(v).toLowerCase().replace(/[’'`ʼ]/g, '’').replace(/\s+/g, '').replace(/,/g, '.').replace(/[−–—]/g, '-').replace(/ё/g, 'е');
+  }
+
+  /* ---------- перетягування: миша, палець, а також натискання ---------- */
+  function setupDrag(slide, onDrop) {
+    let drag = null, picked = null;
+    function pick(el) { if (picked) picked.classList.remove('picked'); picked = el; if (el) el.classList.add('picked'); }
+    slide.addEventListener('pointerdown', e => {
+      const chip = e.target.closest('[data-chip]');
+      if (!chip || e.target.closest('button')) return;
+      drag = { chip, x: e.clientX, y: e.clientY, moved: false, id: e.pointerId };
+    });
+    slide.addEventListener('pointermove', e => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+      if (!drag.moved) { drag.moved = true; drag.chip.classList.add('dragging'); try { drag.chip.setPointerCapture(e.pointerId); } catch (_) {} }
+      drag.chip.style.transform = `translate(${dx}px, ${dy}px)`;
+      e.preventDefault();
+    });
+    function end(e) {
+      if (!drag || e.pointerId !== drag.id) return;
+      const d = drag; drag = null;
+      if (!d.moved) { pick(picked === d.chip ? null : d.chip); return; }
+      d.chip.classList.remove('dragging'); d.chip.style.transform = '';
+      d.chip.style.visibility = 'hidden';
+      const under = document.elementFromPoint(e.clientX, e.clientY);
+      d.chip.style.visibility = '';
+      const zone = under && under.closest('[data-drop]');
+      if (zone && slide.contains(zone)) onDrop(d.chip, zone, e);
+      pick(null);
+    }
+    slide.addEventListener('pointerup', end);
+    slide.addEventListener('pointercancel', e => { if (drag) { drag.chip.classList.remove('dragging'); drag.chip.style.transform = ''; drag = null; } });
+    slide.addEventListener('click', e => {
+      if (!picked) return;
+      const zone = e.target.closest('[data-drop]');
+      if (zone && !e.target.closest('[data-chip]')) { onDrop(picked, zone, null); pick(null); }
+    });
+  }
+
+  function setFb(slide, ok, text) {
+    const f = slide.querySelector('.ix-fb');
+    if (!f) return;
+    f.className = 'ix-fb ' + (ok ? 'ok' : 'bad');
+    f.innerHTML = text;
+  }
+
+  /* ---------- логіка інтерактивів ---------- */
+  function initIx(slide, score) {
+    const type = slide.dataset.ix;
+    const done = ok => { if (!slide.dataset.done) { slide.dataset.done = ok ? '1' : '0'; score(ok); } };
+
+    if (type === 'quiz') {
+      const c = +slide.dataset.c;
+      slide.addEventListener('click', e => {
+        const b = e.target.closest('.ix-opt'); if (!b || slide.dataset.solved) return;
+        const ok = +b.dataset.k === c;
+        b.classList.add(ok ? 'ok' : 'bad');
+        done(ok);
+        if (ok) {
+          slide.dataset.solved = 1;
+          slide.querySelectorAll('.ix-opt').forEach(x => x.disabled = true);
+          setFb(slide, true, slide.dataset.done === '1' ? '🎉 Правильно, з першої спроби!' : '✅ Правильно!');
+          const w = slide.querySelector('.ix-why'); if (w && w.textContent.trim()) w.hidden = false;
+        } else { b.disabled = true; setFb(slide, false, '🙃 Не зовсім. Спробуй ще раз!'); }
+      });
+    }
+
+    if (type === 'tf') {
+      const items = [...slide.querySelectorAll('.tf-item')];
+      let right = 0, answered = 0;
+      slide.addEventListener('click', e => {
+        const b = e.target.closest('.tf-b'); if (!b) return;
+        const it = b.closest('.tf-item'); if (it.dataset.ans) return;
+        const ok = b.dataset.v === it.dataset.v;
+        it.dataset.ans = 1; answered++; if (ok) right++;
+        it.classList.add(ok ? 'ok' : 'bad');
+        b.classList.add('chosen');
+        it.querySelectorAll('.tf-b').forEach(x => x.disabled = true);
+        const w = it.querySelector('.tf-why');
+        w.innerHTML = (it.dataset.v === '1' ? '<b>Правда.</b> ' : '<b>Міф.</b> ') + w.innerHTML; w.hidden = false;
+        if (answered === items.length) { done(right === items.length); setFb(slide, right === items.length, `Результат: ${right} з ${items.length} ${right === items.length ? '🎉' : '👍'}`); }
+      });
+    }
+
+    if (type === 'flip') {
+      slide.addEventListener('click', e => { const c = e.target.closest('.flip-card'); if (c) c.classList.toggle('flipped'); });
+    }
+
+    if (type === 'input') {
+      const rows = [...slide.querySelectorAll('.in-row')];
+      let tries = 0;
+      const check = () => {
+        tries++;
+        let right = 0;
+        rows.forEach(r => {
+          const inp = r.querySelector('input');
+          const acc = JSON.parse(r.dataset.ans).map(norm);
+          const ok = inp.value.trim() !== '' && acc.includes(norm(inp.value));
+          r.classList.toggle('ok', ok); r.classList.toggle('bad', !ok);
+          if (ok) { right++; inp.readOnly = true; }
+        });
+        const all = right === rows.length;
+        if (all || tries >= 2) done(all && tries === 1);
+        if (all) {
+          setFb(slide, true, tries === 1 ? '🎉 Усе правильно!' : '✅ Тепер правильно!');
+          slide.querySelector('.ix-check').hidden = true; slide.querySelector('.ix-show').hidden = true;
+          const w = slide.querySelector('.ix-why'); if (w && w.textContent.trim()) w.hidden = false;
+        } else {
+          setFb(slide, false, `Правильно: ${right} з ${rows.length}. Перевір виділені поля.`);
+          if (tries >= 2) slide.querySelector('.ix-show').hidden = false;
+        }
+      };
+      slide.querySelector('.ix-check').onclick = check;
+      slide.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); check(); } });
+      slide.querySelector('.ix-show').onclick = () => {
+        rows.forEach(r => { const inp = r.querySelector('input'); if (!r.classList.contains('ok')) { inp.value = JSON.parse(r.dataset.ans)[0]; inp.readOnly = true; r.classList.remove('bad'); r.classList.add('shown'); } });
+        slide.querySelector('.ix-show').hidden = true; slide.querySelector('.ix-check').hidden = true;
+        setFb(slide, false, 'Ось правильні відповіді. Розберися, де була помилка.');
+        const w = slide.querySelector('.ix-why'); if (w && w.textContent.trim()) w.hidden = false;
+      };
+    }
+
+    if (type === 'match' || type === 'group') {
+      const bank = slide.querySelector('[data-bank]');
+      const chips = [...slide.querySelectorAll('[data-chip]')];
+      setupDrag(slide, (chip, zone) => {
+        slide.querySelectorAll('.chip').forEach(c => c.classList.remove('ok', 'bad'));
+        if (type === 'match' && zone.matches('.m-slot')) {
+          const old = zone.querySelector('[data-chip]'); if (old && old !== chip) bank.appendChild(old);
+          zone.appendChild(chip);
+        } else if (type === 'group' && zone.matches('.g-box')) zone.querySelector('.g-items').appendChild(chip);
+        else if (zone.matches('[data-bank]')) bank.appendChild(chip);
+        else if (zone.closest('.m-slot')) { const sl = zone.closest('.m-slot'); const old = sl.querySelector('[data-chip]'); if (old && old !== chip) bank.appendChild(old); sl.appendChild(chip); }
+        else if (zone.closest('.g-box')) zone.closest('.g-box').querySelector('.g-items').appendChild(chip);
+        slide.querySelector('.ix-fb').textContent = '';
+      });
+      slide.querySelector('.ix-check').onclick = () => {
+        if (bank.querySelector('[data-chip]')) { setFb(slide, false, 'Спершу розмісти всі картки 🙂'); return; }
+        let right = 0;
+        chips.forEach(c => {
+          const ok = type === 'match' ? c.parentElement.dataset.k === c.dataset.k : c.closest('.g-box').dataset.g === c.dataset.g;
+          c.classList.toggle('ok', ok); c.classList.toggle('bad', !ok); if (ok) right++;
+        });
+        const all = right === chips.length;
+        done(all);
+        setFb(slide, all, all ? '🎉 Чудово, усе правильно!' : `Правильно: ${right} з ${chips.length}. Перетягни червоні картки в інші місця.`);
+      };
+      slide.querySelector('.ix-reset').onclick = () => { chips.forEach(c => { c.classList.remove('ok', 'bad'); bank.appendChild(c); }); slide.querySelector('.ix-fb').textContent = ''; };
+    }
+
+    if (type === 'order') {
+      const list = slide.querySelector('.o-list');
+      const clear = () => { list.querySelectorAll('.o-item').forEach(x => x.classList.remove('ok', 'bad')); slide.querySelector('.ix-fb').textContent = ''; };
+      setupDrag(slide, (chip, zone, e) => {
+        const target = zone.closest('.o-item'); if (!target || target === chip) return;
+        const r = target.getBoundingClientRect();
+        const after = e && e.clientY ? e.clientY > r.top + r.height / 2 : [...list.children].indexOf(chip) < [...list.children].indexOf(target);
+        list.insertBefore(chip, after ? target.nextSibling : target);
+        clear();
+      });
+      slide.addEventListener('click', e => {
+        const up = e.target.closest('.o-up'), dn = e.target.closest('.o-down');
+        if (!up && !dn) return;
+        const li = e.target.closest('.o-item');
+        if (up && li.previousElementSibling) list.insertBefore(li, li.previousElementSibling);
+        if (dn && li.nextElementSibling) list.insertBefore(li.nextElementSibling, li);
+        clear();
+      });
+      slide.querySelector('.ix-check').onclick = () => {
+        const items = [...list.children]; let right = 0;
+        items.forEach((li, k) => { const ok = +li.dataset.k === k; li.classList.toggle('ok', ok); li.classList.toggle('bad', !ok); if (ok) right++; });
+        const all = right === items.length;
+        done(all);
+        setFb(slide, all, all ? '🎉 Правильний порядок!' : `На своїх місцях: ${right} з ${items.length}. Поміняй червоні кроки.`);
+      };
     }
   }
 
   function run(root, lesson, opts) {
     const slides = lesson.slides || [];
-    let i = 0;
+    const ixCount = slides.filter(s => IX_TYPES.includes(s.type)).length;
+    let i = 0, ixDone = 0, ixRight = 0;
     root.innerHTML = `
       <div class="crumbs">${opts.crumbs || ''}</div>
       <div class="page-head"><div><h1 style="font-size:clamp(22px,3vw,30px)">${esc(lesson.emoji || '')} ${esc(lesson.title)}</h1>
-        <p>Презентація · ${slides.length} слайдів${lesson.pages ? ' · підручник, ' + esc(/^\d/.test(lesson.pages) ? 'с. ' + lesson.pages : lesson.pages) : ''}</p></div>
-        <a class="btn brand" href="${opts.testHref}">📝 Пройти тест</a></div>
+        <p>Презентація · ${slides.length} слайдів${ixCount ? ` · ${ixCount} інтерактивних завдань` : ''}${lesson.pages ? ' · підручник, ' + esc(/^\d/.test(lesson.pages) ? 'с. ' + lesson.pages : lesson.pages) : ''}</p></div>
+        <div class="head-right">${ixCount ? `<span class="ix-score" id="ixScore" title="Інтерактивні завдання, виконані з першої спроби">⭐ 0 / ${ixCount}</span>` : ''}<a class="btn brand" href="${opts.testHref}">📝 Пройти тест</a></div></div>
       <div class="slides-shell">
-        <div class="slide-stage" id="stage" style="--c:${opts.color}" tabindex="0">${slides.map(s => slideHtml(s, lesson)).join('')}</div>
+        <div class="slide-stage" id="stage" style="--c:${opts.color}" tabindex="0">${slides.map((s, n) => slideHtml(s, lesson, n)).join('')}</div>
         <div class="slide-ctrl">
           <button class="btn light" id="sPrev">←</button>
           <div class="slide-progress"><i id="sBar"></i></div>
@@ -49,9 +312,23 @@
         ${opts.source || ''}
       </div>`;
     const stage = root.querySelector('#stage');
+    if (ixCount) stage.insertAdjacentHTML('beforeend', `<div class="slide s-summary"><div class="s-label">🏁 Підсумок</div><h2>Як ти впорався з завданнями?</h2>
+      <div class="sum-big" id="sumBig"></div><p id="sumText"></p><a class="btn brand sum-btn" href="${opts.testHref}">📝 Перевір себе в тесті</a></div>`);
     if (opts.sourceText) stage.insertAdjacentHTML('beforeend', `<div class="slide s-source"><div class="s-label">📚 Джерело інформації</div><h2>Матеріал підготовлено за підручником</h2><p class="src-text">${opts.sourceText}</p></div>`);
     const els = [...stage.querySelectorAll('.slide')];
     els.forEach(el => el.style.setProperty('--c', opts.color));
+
+    function updateScore() {
+      const sc = root.querySelector('#ixScore'); if (sc) sc.textContent = `⭐ ${ixRight} / ${ixCount}`;
+      const big = root.querySelector('#sumBig'); if (!big) return;
+      big.textContent = `${ixRight} / ${ixCount}`;
+      const pct = ixCount ? ixRight / ixCount : 0;
+      root.querySelector('#sumText').textContent = ixDone < ixCount
+        ? `Виконано ${ixDone} з ${ixCount} завдань. Повернись до пропущених — вони допоможуть у тесті!`
+        : pct === 1 ? 'Неймовірно! Усі завдання з першої спроби 🏆' : pct >= .6 ? 'Добрий результат! Перед тестом переглянь слайди з помилками 💪' : 'Варто ще раз переглянути матеріал уроку — ти впораєшся! 📚';
+    }
+    els.forEach(el => { if (el.dataset.ix) initIx(el, ok => { ixDone++; if (ok) ixRight++; updateScore(); }); });
+    updateScore();
 
     function show(k) {
       i = Math.max(0, Math.min(els.length - 1, k));
@@ -71,17 +348,25 @@
     stage.addEventListener('click', e => {
       const r = e.target.closest('[data-reveal]');
       if (r) { r.nextElementSibling.hidden = false; r.remove(); return; }
+      const ns = e.target.closest('[data-next-step]');
+      if (ns) {
+        const sl = ns.closest('.slide');
+        const next = sl.querySelector('.ex-steps li[hidden]');
+        if (next) next.hidden = false;
+        if (!sl.querySelector('.ex-steps li[hidden]')) { ns.remove(); const a = sl.querySelector('.ex-ans'); if (a) a.hidden = false; }
+      }
     });
     function key(e) {
+      if (e.target.closest && e.target.closest('input, textarea, button')) { if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' || e.target.matches('input, textarea')) return; }
       if (['ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); show(i + 1); }
       if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); show(i - 1); }
     }
     document.addEventListener('keydown', key);
     let sx = null;
-    stage.addEventListener('touchstart', e => { sx = e.touches[0].clientX; }, { passive: true });
+    stage.addEventListener('touchstart', e => { sx = e.target.closest('[data-chip], .ix-actions, input, .flip-card') ? null : e.touches[0].clientX; }, { passive: true });
     stage.addEventListener('touchend', e => {
       if (sx === null) return; const dx = e.changedTouches[0].clientX - sx; sx = null;
-      if (Math.abs(dx) > 40) show(i + (dx < 0 ? 1 : -1));
+      if (Math.abs(dx) > 60) show(i + (dx < 0 ? 1 : -1));
     });
     show(0);
     return { destroy() { document.removeEventListener('keydown', key); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } };

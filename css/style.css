@@ -424,3 +424,95 @@ h1, h2, h3 { overflow-wrap: break-word; }
 
 /* фрагменти програмного коду на слайдах */
 .s-code { margin: 14px 0 0; padding: 14px 18px; border-radius: 14px; background: #1E1B4B; color: #E0E7FF; font: 600 clamp(15px,1.7vw,19px)/1.55 ui-monospace, 'Cascadia Code', Consolas, monospace; white-space: pre; overflow-x: auto; }
+
+/* ===== Інтерактивні слайди ===== */
+.head-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ix-score { font-weight: 900; padding: 10px 16px; border-radius: 99px; background: #FFF4D6; color: #8A5A00; border: 2px solid #FFE08A; white-space: nowrap; }
+.slide.ix, .slide.s-example { justify-content: safe center; overflow-y: auto; background: color-mix(in srgb, var(--c, #5B4BF5) 5%, white); }
+.slide.ix h2 { font-size: 1.45em; margin-bottom: .35em; }
+.slide .ix-p { margin-bottom: .4em; }
+.slide .ix-q { font-size: 1.1em; font-weight: 800; margin: .2em 0 .7em; }
+.slide .ix-opts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55em; }
+.slide .ix-opt, .slide .tf-b, .slide .ix-actions button { font: inherit; font-weight: 800; font-size: .9em; cursor: pointer; border: 2px solid color-mix(in srgb, var(--c, #5B4BF5) 25%, white); background: #fff; color: var(--ink); border-radius: .8em; padding: .6em .9em; text-align: left; transition: transform .15s, background .15s, border-color .15s; }
+.slide .ix-opt:hover:not(:disabled), .slide .tf-b:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--c, var(--brand)); }
+.slide .ix-opt.ok, .slide .tf-item.ok .tf-b.chosen { background: var(--ok-bg); border-color: var(--ok); }
+.slide .ix-opt.bad, .slide .tf-item.bad .tf-b.chosen { background: var(--bad-bg); border-color: var(--bad); opacity: .85; }
+.slide .ix-opt:disabled, .slide .tf-b:disabled { cursor: default; }
+.slide .ix-fb { margin-top: .6em; font-weight: 900; min-height: 1.3em; }
+.slide .ix-fb.ok { color: var(--ok); } .slide .ix-fb.bad { color: var(--bad); }
+.slide .ix-why, .slide .tf-why { margin-top: .4em; padding: .55em .8em; border-radius: .7em; background: #fff; border-left: .25em solid var(--c, var(--brand)); font-weight: 700; font-size: .85em; color: var(--ink-2); }
+.slide .ix-hint { margin-top: .6em; font-size: .75em; font-weight: 800; color: var(--muted); }
+.slide .ix-actions { display: flex; gap: .6em; margin-top: .7em; flex-wrap: wrap; }
+.slide .ix-actions .ix-check { background: var(--c, var(--brand)); color: #fff; border-color: transparent; }
+/* правда чи міф */
+.slide .tf-list { display: grid; gap: .5em; }
+.slide .tf-item { display: grid; grid-template-columns: 1fr auto; gap: .3em .8em; align-items: center; background: #fff; border-radius: .8em; padding: .5em .8em; border: 2px solid transparent; }
+.slide .tf-item.ok { border-color: var(--ok); } .slide .tf-item.bad { border-color: var(--bad); }
+.slide .tf-text { font-weight: 800; font-size: .92em; }
+.slide .tf-btns { display: flex; gap: .4em; }
+.slide .tf-b { font-size: .78em; padding: .4em .7em; }
+.slide .tf-why { grid-column: 1 / -1; margin-top: 0; }
+/* картки-перевертні */
+.slide .flip-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9em, 1fr)); gap: .7em; }
+.slide .flip-card { font: inherit; border: 0; background: none; padding: 0; perspective: 900px; min-height: 5.4em; cursor: pointer; }
+.slide .flip-in { position: relative; display: block; width: 100%; height: 100%; min-height: 5.4em; transition: transform .5s; transform-style: preserve-3d; }
+.slide .flip-card.flipped .flip-in { transform: rotateY(180deg); }
+.slide .flip-f, .slide .flip-b { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: .6em; border-radius: .9em; backface-visibility: hidden; font-weight: 900; box-shadow: var(--shadow); }
+.slide .flip-f { background: var(--c, var(--brand)); color: #fff; font-size: 1em; }
+.slide .flip-b { background: #fff; color: var(--ink); transform: rotateY(180deg); font-size: .78em; font-weight: 800; border: 2px solid var(--c, var(--brand)); }
+/* впиши відповідь */
+.slide .in-list { display: grid; gap: .55em; }
+.slide .in-row { display: flex; align-items: center; gap: .8em; flex-wrap: wrap; }
+.slide .in-q { font-weight: 800; }
+.slide .in-box { display: inline-flex; align-items: center; gap: .4em; }
+.slide .in-box input { font: inherit; font-weight: 900; width: 7em; padding: .35em .6em; border-radius: .6em; border: 2px solid color-mix(in srgb, var(--c, #5B4BF5) 35%, white); background: #fff; color: var(--ink); }
+.slide .in-box input:focus { outline: 3px solid color-mix(in srgb, var(--c, #5B4BF5) 30%, transparent); }
+.slide .in-row.ok input { border-color: var(--ok); background: var(--ok-bg); }
+.slide .in-row.bad input { border-color: var(--bad); background: var(--bad-bg); }
+.slide .in-row.shown input { border-color: #F5A524; background: #FFF6E0; }
+.slide .in-unit { font-weight: 800; color: var(--ink-2); }
+/* перетягування */
+.slide .chip { touch-action: none; user-select: none; cursor: grab; background: #fff; border: 2px solid color-mix(in srgb, var(--c, #5B4BF5) 35%, white); border-radius: .7em; padding: .35em .7em; font-weight: 800; font-size: .85em; box-shadow: 0 3px 0 color-mix(in srgb, var(--c, #5B4BF5) 18%, white); transition: box-shadow .15s; position: relative; }
+.slide .chip.dragging { cursor: grabbing; z-index: 50; box-shadow: var(--shadow-lg); transition: none; }
+.slide .chip.picked, .slide .o-item.picked { outline: 3px solid var(--c, var(--brand)); outline-offset: 2px; }
+.slide .chip.ok, .slide .o-item.ok { border-color: var(--ok); background: var(--ok-bg); }
+.slide .chip.bad, .slide .o-item.bad { border-color: var(--bad); background: var(--bad-bg); }
+.slide .chip-bank { display: flex; flex-wrap: wrap; gap: .45em; margin-top: .7em; padding: .55em; min-height: 2.6em; border-radius: .8em; border: 2px dashed color-mix(in srgb, var(--c, #5B4BF5) 30%, white); background: rgba(255,255,255,.6); }
+.slide .m-grid { display: grid; gap: .4em; }
+.slide .m-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: .6em; align-items: center; }
+.slide .m-left { font-weight: 900; background: #fff; border-radius: .7em; padding: .4em .7em; border-left: .3em solid var(--c, var(--brand)); font-size: .9em; }
+.slide .m-slot { min-height: 2.3em; border-radius: .7em; border: 2px dashed color-mix(in srgb, var(--c, #5B4BF5) 35%, white); display: flex; align-items: center; padding: .15em; background: rgba(255,255,255,.7); }
+.slide .m-slot .chip { width: 100%; }
+.slide .g-boxes { display: grid; grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr)); gap: .6em; }
+.slide .g-box { background: #fff; border-radius: .9em; border: 2px solid color-mix(in srgb, var(--c, #5B4BF5) 25%, white); padding: .45em; min-height: 5em; }
+.slide .g-name { font-weight: 900; text-align: center; color: var(--c, var(--brand)); margin-bottom: .35em; font-size: .9em; }
+.slide .g-items { display: flex; flex-wrap: wrap; gap: .35em; min-height: 2.4em; }
+.slide .o-list { list-style: none; display: grid; gap: .4em; counter-reset: oi; }
+.slide .o-item { counter-increment: oi; display: flex; align-items: center; gap: .6em; background: #fff; border-radius: .7em; padding: .35em .5em .35em .6em; border: 2px solid color-mix(in srgb, var(--c, #5B4BF5) 25%, white); font-weight: 800; font-size: .88em; touch-action: none; user-select: none; cursor: grab; }
+.slide .o-item::before { content: counter(oi); flex: none; width: 1.6em; height: 1.6em; border-radius: .5em; display: grid; place-items: center; background: var(--c, var(--brand)); color: #fff; font-size: .85em; }
+.slide .o-item.dragging { z-index: 50; box-shadow: var(--shadow-lg); cursor: grabbing; }
+.slide .o-txt { flex: 1; }
+.slide .o-arrows { display: flex; gap: .25em; }
+.slide .o-arrows button { font: inherit; font-size: .75em; border: 0; border-radius: .4em; padding: .2em .45em; background: color-mix(in srgb, var(--c, #5B4BF5) 12%, white); color: var(--ink); cursor: pointer; }
+/* розв'язуємо разом */
+.slide.s-example .ex-steps { list-style: none; counter-reset: ex; display: grid; gap: .45em; margin-top: .3em; }
+.slide.s-example .ex-steps li { counter-increment: ex; display: flex; gap: .7em; align-items: center; font-weight: 800; background: #fff; border-radius: .7em; padding: .45em .7em; animation: pop .35s ease; }
+.slide.s-example .ex-steps li::before { content: counter(ex); flex: none; width: 1.6em; height: 1.6em; border-radius: .5em; display: grid; place-items: center; background: var(--c, var(--brand)); color: #fff; font-size: .85em; }
+.slide.s-example .ex-ans { margin-top: .6em; font-weight: 900; color: var(--ok); font-size: 1.05em; }
+.slide .s-after { margin-top: .6em; }
+@keyframes pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* підсумок */
+.slide.s-summary { text-align: center; align-items: center; background: linear-gradient(135deg, #FFF8E6, #fff); }
+.slide.s-summary .sum-big { font-family: var(--font-head); font-weight: 900; font-size: 3.2em; color: var(--c, var(--brand)); line-height: 1.1; margin: .1em 0 .2em; }
+.slide.s-summary .sum-btn { margin-top: .8em; font-size: .8em; }
+@media (max-width: 720px) {
+  .slide .ix-opts { grid-template-columns: 1fr; }
+  .slide .tf-item { grid-template-columns: 1fr; }
+  .slide .m-row { grid-template-columns: 1fr; gap: .2em; }
+  .slide .g-boxes { grid-template-columns: 1fr; }
+  .slide-stage:has(.slide.ix.on) { aspect-ratio: auto; min-height: 120vw; }
+}
+.slide.ix { font-size: clamp(13px, 1.8vw, 25px); padding: 4% 5.5%; }
+.slide-stage:fullscreen .slide.ix { font-size: clamp(15px, 2vw, 34px); }
+.slide .chip-bank:empty::before { content: 'Усі картки розміщено ✓ Натисни «Перевірити»'; font-weight: 800; font-size: .8em; color: var(--muted); align-self: center; }
+@media (max-width: 720px) { .slide.ix { font-size: clamp(12px, 3.8vw, 18px); } .slide-stage:has(.slide.ix.on) { min-height: 165vw; } }
