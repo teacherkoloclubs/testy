@@ -6,6 +6,11 @@
      archive: [{ course: 'informatics2', label: 'видання 2024' }] — старі видання; їхні результати
                                                   вчитель і далі бачить у «Результатах». */
 window.CATALOG = [
+  { cls: 1, color: '#E8505B', subjects: [
+    { id: 'ukr1', name: 'Українська мова (навчання грамоти)', icon: '✍️' },
+    { id: 'math1', name: 'Математика', icon: '➗' },
+    { id: 'world1', name: 'Я досліджую світ', icon: '🔎' }
+  ]},
   { cls: 2, color: '#FF7A59', subjects: [
     { id: 'informatics2', name: 'Інформатика', icon: '💻', ready: true }
   ]},

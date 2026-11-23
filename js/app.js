@@ -22,6 +22,7 @@
     const wrap = document.getElementById('modal'), box = document.getElementById('modalBox');
     box.className = 'modal' + (o.wide ? ' wide' : '');
     box.innerHTML = html; wrap.hidden = false;
+    initPickers(box);
     const close = () => { wrap.hidden = true; box.innerHTML = ''; };
     box.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
     wrap.onclick = e => { if (e.target === wrap && !o.lock) close(); };
@@ -277,13 +278,12 @@
     if (su) su.onclick = signupDialog;
   }
   function signupDialog() {
-    const opts = CATALOG.map(k => k.subjects.filter(sj => sj.ready).map(sj => `<label class="sp-item"><input type="checkbox" value="${esc(sj.id)}"><span>${k.cls} кл. · ${esc(sj.icon)} ${esc(sj.name)}</span></label>`).join('')).join('');
     modal(`<h2>👩‍🏫 Заявка вчителя</h2>
       <p class="muted" style="font-weight:700;margin-bottom:12px">Після підтвердження адміністратором ви побачите свої класи, учнів і результати.</p>
       <div class="field"><label>Прізвище, ім’я та по батькові</label><input class="input" id="sName"></div>
       <div class="field"><label>Пошта (буде вашим логіном)</label><input class="input" id="sMail" type="email" autocapitalize="off" spellcheck="false"></div>
       <div class="field"><label>Пароль (щонайменше 8 символів)</label><input class="input" id="sPw" type="password" autocomplete="new-password"></div>
-      <div class="field"><label>Які предмети ви викладаєте?</label><div class="subj-pick flat">${opts}</div></div>
+      <div class="field"><label>Які предмети ви викладаєте?</label>${subjectPicker([])}</div>
       <div class="field"><label>Коментар для адміністратора (необов’язково)</label><input class="input" id="sNote" maxlength="300" placeholder="Наприклад: класний керівник 3-А"></div>
       <div class="form-error" id="sErr"></div>
       <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="sGo">Надіслати заявку</button></div>`,
@@ -293,7 +293,7 @@
         if (!name) { err.textContent = 'Введіть ім’я'; return; }
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { err.textContent = 'Введіть правильну адресу пошти'; return; }
         if (password.length < 8) { err.textContent = 'Пароль має містити щонайменше 8 символів'; return; }
-        const requested = [...box.querySelectorAll('.subj-pick input:checked')].map(c => c.value);
+        const requested = readPicker(box).subjects;
         const b = box.querySelector('#sGo'); b.disabled = true; b.textContent = 'Надсилаємо…';
         try { await Store.registerTeacher({ name, email, password, requested, note: box.querySelector('#sNote').value }); close(); }
         catch (e) { err.textContent = e.message; b.disabled = false; b.textContent = 'Надіслати заявку'; }
@@ -303,7 +303,7 @@
   /* ---------------- класи / предмети ---------------- */
   function renderClasses() {
     $app.innerHTML = `
-      <div class="page-head"><div><h1>${isTeacher() ? 'Мої класи' : 'Оберіть клас'}</h1><p>${isTeacher() ? 'Класи й предмети, які вам призначив адміністратор' : 'Тести та презентації для 2–9 класів'}</p></div></div>
+      <div class="page-head"><div><h1>${isTeacher() ? 'Мої класи' : 'Оберіть клас'}</h1><p>${isTeacher() ? 'Класи й предмети, які вам призначив адміністратор' : 'Тести та презентації для 1–9 класів'}</p></div></div>
       ${isTeacher() && !myClasses().length ? `<div class="card empty"><span class="e">📭</span>Вам ще не призначено жодного предмета. Зверніться до адміністратора.</div>` : ''}
       ${myLessonsCard()}
       <div class="class-grid">${myClasses().map(k => `
@@ -1212,21 +1212,72 @@
     $app.querySelector('#pRe').onclick = () => location.reload();
   }
 
-  /* ---------------- вибір предметів для вчителя ---------------- */
-  function subjectPicker(selectedIds) {
-    const sel = new Set(selectedIds || []);
-    return `<div class="subj-pick">${CATALOG.map((k, ki) => k.subjects.length ? `
-      <div class="sp-class" style="--c:${esc(k.color)}"><b class="sp-num">${k.cls} клас</b>
-        ${k.subjects.map((sj, si) => `<label class="sp-item"><input type="checkbox" data-sp="${ki}:${si}" ${subjectIds(sj).some(x => sel.has(x)) ? 'checked' : ''}>
-          <span>${esc(sj.icon)} ${esc(sj.name)}${sj.ready ? '' : ' <small class="muted">(готується)</small>'}</span></label>`).join('')}
-      </div>` : '').join('')}</div>`;
+  /* ---------------- вибір предметів для вчителя ----------------
+     Компактний вибір: вкладки «1–4 / 5–9 / усі класи», два види — «за предметами»
+     (рядок предмета з кнопками класів — зручно, коли вчитель веде предмет у кількох класах)
+     і «за класами» (рядок класу з предметами та «увесь клас»), пошук і лічильник обраного. */
+  function subjectPicker(selectedIds, opt) {
+    const sel = new Set(selectedIds || []), on = [];
+    CATALOG.forEach((k, ki) => k.subjects.forEach((sj, si) => { if (subjectIds(sj).some(x => sel.has(x))) on.push(ki + ':' + si); }));
+    return `<div class="subj-pick2" data-sel="${esc(JSON.stringify(on))}" data-ready="${opt && opt.readyOnly ? 1 : 0}"></div>`;
+  }
+  function initPickers(root) {
+    root.querySelectorAll('.subj-pick2[data-sel]').forEach(el => {
+      el._sel = new Set(JSON.parse(el.dataset.sel || '[]'));
+      const readyOnly = el.dataset.ready === '1';
+      el.removeAttribute('data-sel');
+      const items = [];   // { key:'ki:si', k, sj }
+      CATALOG.forEach((k, ki) => k.subjects.forEach((sj, si) => { if (!readyOnly || sj.ready) items.push({ key: ki + ':' + si, k, sj }); }));
+      const hasPrim = items.some(x => x.k.cls <= 4), hasSec = items.some(x => x.k.cls > 4);
+      let band = ss.getItem('spBand') || 'all', view = ss.getItem('spView') || 'subj', q = '';
+      const inBand = x => band === 'all' || (band === 'p' ? x.k.cls <= 4 : x.k.cls > 4);
+      const match = x => !q || x.sj.name.toLowerCase().includes(q) || String(x.k.cls) === q;
+      const count = list => list.filter(x => el._sel.has(x.key)).length;
+      const draw = () => {
+        const list = items.filter(x => inBand(x) && match(x));
+        let body = '';
+        if (view === 'subj') {
+          /* групування за назвою предмета */
+          const groups = new Map();
+          list.forEach(x => { const n = x.sj.name.trim(); if (!groups.has(n)) groups.set(n, []); groups.get(n).push(x); });
+          body = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0], 'uk')).map(([n, xs]) => {
+            const all = xs.every(x => el._sel.has(x.key));
+            return `<div class="sp-row"><label class="sp-head"><input type="checkbox" data-all="${esc(xs.map(x => x.key).join(','))}" ${all ? 'checked' : ''}><span>${esc(xs[0].sj.icon)} <b>${esc(n)}</b></span><small>${count(xs)}/${xs.length}</small></label>
+              <div class="sp-pills">${xs.sort((a, b) => a.k.cls - b.k.cls).map(x => `<button type="button" class="sp-pill ${el._sel.has(x.key) ? 'on' : ''} ${x.sj.ready ? '' : 'soon'}" data-k="${x.key}" style="--c:${esc(x.k.color)}" title="${x.k.cls} клас · ${esc(n)}${x.sj.ready ? '' : ' (матеріали готуються)'}">${x.k.cls}<small>кл.</small></button>`).join('')}</div></div>`;
+          }).join('');
+        } else {
+          const byCls = new Map();
+          list.forEach(x => { if (!byCls.has(x.k.cls)) byCls.set(x.k.cls, []); byCls.get(x.k.cls).push(x); });
+          body = [...byCls.entries()].sort((a, b) => a[0] - b[0]).map(([c, xs]) => {
+            const all = xs.every(x => el._sel.has(x.key));
+            return `<div class="sp-row"><label class="sp-head"><input type="checkbox" data-all="${esc(xs.map(x => x.key).join(','))}" ${all ? 'checked' : ''}><span class="sp-cnum" style="--c:${esc(xs[0].k.color)}">${c}</span><span><b>${c} клас</b></span><small>${count(xs)}/${xs.length}</small></label>
+              <div class="sp-pills">${xs.map(x => `<button type="button" class="sp-pill wide ${el._sel.has(x.key) ? 'on' : ''} ${x.sj.ready ? '' : 'soon'}" data-k="${x.key}" style="--c:${esc(x.k.color)}">${esc(x.sj.icon)} ${esc(x.sj.name)}</button>`).join('')}</div></div>`;
+          }).join('');
+        }
+        const chosen = items.filter(x => el._sel.has(x.key));
+        el.innerHTML = `<div class="sp-bar">
+            ${hasPrim && hasSec ? `<div class="sp-seg">${[['all', 'Усі класи'], ['p', '1–4'], ['s', '5–9']].map(([v, t]) => `<button type="button" data-band="${v}" class="${band === v ? 'on' : ''}">${t}</button>`).join('')}</div>` : ''}
+            <div class="sp-seg">${[['subj', 'За предметами'], ['cls', 'За класами']].map(([v, t]) => `<button type="button" data-view="${v}" class="${view === v ? 'on' : ''}">${t}</button>`).join('')}</div>
+            <input class="input sp-q" placeholder="🔍 Предмет або клас" value="${esc(q)}"></div>
+          <div class="sp-body">${body || '<p class="muted" style="font-weight:700;padding:10px">Нічого не знайдено</p>'}</div>
+          <div class="sp-chosen">${chosen.length ? `<b>Обрано ${chosen.length}:</b> ${chosen.slice(0, 12).map(x => `<span class="tag">${x.k.cls} кл. · ${esc(x.sj.name)}</span>`).join(' ')}${chosen.length > 12 ? ` <span class="muted">і ще ${chosen.length - 12}</span>` : ''} <button type="button" class="sp-clear">очистити</button>` : '<span class="muted">Нічого не обрано</span>'}</div>`;
+        el.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { el._sel.has(b.dataset.k) ? el._sel.delete(b.dataset.k) : el._sel.add(b.dataset.k); draw(); });
+        el.querySelectorAll('[data-all]').forEach(c => c.onchange = () => { c.dataset.all.split(',').forEach(k => c.checked ? el._sel.add(k) : el._sel.delete(k)); draw(); });
+        el.querySelectorAll('[data-band]').forEach(b => b.onclick = () => { band = b.dataset.band; ss.setItem('spBand', band); draw(); });
+        el.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { view = b.dataset.view; ss.setItem('spView', view); draw(); });
+        const cl = el.querySelector('.sp-clear'); if (cl) cl.onclick = () => { el._sel.clear(); draw(); };
+        const qi = el.querySelector('.sp-q');
+        qi.oninput = () => { q = qi.value.trim().toLowerCase(); const pos = qi.selectionStart; draw(); const n = el.querySelector('.sp-q'); n.focus(); n.setSelectionRange(pos, pos); };
+      };
+      draw();
+    });
   }
   function readPicker(box) {
     const subjects = new Set(), classes = new Set();
-    box.querySelectorAll('[data-sp]:checked').forEach(c => {
-      const [ki, si] = c.dataset.sp.split(':').map(Number); const k = CATALOG[ki], sj = k.subjects[si];
+    box.querySelectorAll('.subj-pick2').forEach(el => (el._sel || new Set()).forEach(key => {
+      const [ki, si] = key.split(':').map(Number); const k = CATALOG[ki], sj = k && k.subjects[si]; if (!sj) return;
       subjectIds(sj).forEach(x => subjects.add(x)); classes.add(k.cls);
-    });
+    }));
     return { subjects: [...subjects], classes: [...classes].sort((a, b) => a - b) };
   }
   function teacherSubjectTags(ids) {
@@ -1623,7 +1674,10 @@
             return `<tr><td class="c">${e.g}</td><td style="font-weight:800">${esc(e.s)}</td><td><small>${(e.t || []).map(esc).join(', ')}</small></td><td class="c">${e.d.length}</td>
             <td><select class="input sm" data-map="${esc(k)}" ${draft ? '' : 'disabled'}><option value="">— не пов’язувати</option>${(kl ? kl.subjects : []).map(s => `<option value="${esc(s.id)}" ${map[k] === s.id ? 'selected' : ''}>${esc(s.icon)} ${esc(s.name)}${s.ready ? '' : ' (готується)'}</option>`).join('')}</select></td>
             <td class="c">${lc || '—'}</td></tr>`; }).join('')}</tbody></table></div>
-          ${draft ? '' : '<p class="muted" style="font-size:13px;font-weight:700">Щоб змінити відповідність, завантажте файл розкладу ще раз.</p>'}</div>
+          ${draft ? '' : `<p class="muted" style="font-size:13px;font-weight:700">Щоб змінити відповідність, завантажте файл розкладу ще раз.</p>
+            ${S.entries.some(e => !map[e.s + '|' + e.g]) ? `<div class="flag-box" style="margin-top:10px">Предметів розкладу без пари на порталі: <b>${S.entries.filter(e => !map[e.s + '|' + e.g]).length}</b>.
+              Їх можна додати в каталог порталу (з позначкою «матеріали готуються») — тоді їх можна буде призначати вчителям, а учні бачитимуть повний список предметів класу.
+              <div style="margin-top:8px"><button class="btn brand sm" id="tAddSubj">➕ Додати предмети розкладу в каталог</button></div></div>` : ''}`}</div>
         ${draft ? `<div style="display:flex;gap:10px;flex-wrap:wrap;margin:16px 0"><button class="btn brand" id="tSave">💾 Зберегти розклад на порталі</button><button class="btn light" id="tCancel">Скасувати</button></div>` : ''}
         ${!draft ? `<div class="card pad" style="margin-top:16px"><h3 class="rs-h">🙋 Я в розкладі</h3>
           <p class="muted" style="font-weight:700;margin-bottom:8px">Оберіть своє ім’я — тоді на головній сторінці ви бачитимете свої уроки на сьогодні.</p>
@@ -1649,6 +1703,13 @@
           importedAt: Date.now(), adminTeacher: (SCHED && SCHED.adminTeacher) || draft.teachers.find(t => normT(t) === normT(user.name)) || '' };
         try { await Store.saveSchedule(data); const students = draft.students; SCHED = data; draft = null; draw(); drawPeople(students); toast('Розклад збережено на порталі'); }
         catch (e) { err.textContent = 'Не вдалося зберегти: ' + e.message; save.disabled = false; save.textContent = '💾 Зберегти розклад на порталі'; }
+      };
+      const addS = $app.querySelector('#tAddSubj');
+      if (addS) addS.onclick = async () => {
+        addS.disabled = true;
+        const added = addScheduleSubjects(SCHED);
+        try { await Store.saveCatalog(exportCatalog()); await Store.saveSchedule(SCHED); toast(`Додано предметів: ${added}`); draw(); }
+        catch (e) { err.textContent = 'Не вдалося зберегти: ' + e.message; addS.disabled = false; }
       };
       const me = $app.querySelector('#tMe');
       if (me) me.onchange = async () => { SCHED.adminTeacher = me.value; await Store.saveSchedule(SCHED); toast('Збережено'); };
@@ -1722,6 +1783,33 @@
     draw();
   }
 
+  /* додати в каталог предмети розкладу, яких там немає; повертає кількість доданих */
+  const ICONS = [['математ', '➗'], ['алгебр', '📐'], ['геометр', '📐'], ['українськ', '✍️'], ['літерат', '📚'], ['читанн', '📚'], ['англ', '🇬🇧'], ['німец', '🇩🇪'], ['іноземн', '🌐'],
+    ['історі', '🏛'], ['громадян', '⚖️'], ['географ', '🌍'], ['природ', '🌿'], ['біолог', '🌿'], ['хімі', '⚗️'], ['фізична', '⚽'], ['фізкульт', '⚽'], ['фізик', '🔭'], ['мистецт', '🎨'],
+    ['музик', '🎵'], ['образотвор', '🎨'], ['технолог', '🛠'], ['дизайн', '🛠'], ['досліджую', '🔎'], ['здоров', '💚'], ['інформат', '💻'], ['етик', '🤝'], ['підприєм', '💼']];
+  const guessIcon = n => { const l = String(n).toLowerCase(); const h = ICONS.find(([w]) => l.includes(w)); return h ? h[1] : '📘'; };
+  const TR = { а: 'a', б: 'b', в: 'v', г: 'h', ґ: 'g', д: 'd', е: 'e', є: 'ie', ж: 'zh', з: 'z', и: 'y', і: 'i', ї: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch', ь: '', ю: 'iu', я: 'ia' };
+  const slug = n => String(n).toLowerCase().split('').map(c => TR[c] != null ? TR[c] : /[a-z0-9]/.test(c) ? c : '_').join('').replace(/_+/g, '_').replace(/^_|_$/g, '').slice(0, 24);
+  const CLASS_COLORS = ['#E8505B', '#FF7A59', '#FFB020', '#2BB673', '#14B8C4', '#3B82F6', '#6366F1', '#A855F7', '#EC4899', '#64748B', '#0EA5E9'];
+  function addScheduleSubjects(S) {
+    let added = 0;
+    S.entries.forEach(e => {
+      const mk = e.s + '|' + e.g; if (S.map[mk]) return;
+      let k = CATALOG.find(c => c.cls === +e.g);
+      if (!k) { k = { cls: +e.g, color: CLASS_COLORS[(+e.g - 1) % CLASS_COLORS.length], subjects: [] }; CATALOG.push(k); CATALOG.sort((a, b) => a.cls - b.cls); }
+      let sj = k.subjects.find(x => normS(x.name) === normS(e.s));
+      if (!sj) {
+        let key = slug(e.s) + e.g; const used = new Set(CATALOG.flatMap(c => c.subjects.map(x => x.key)));
+        while (used.has(key)) key += 'x';
+        sj = { key, id: key, name: e.s, icon: guessIcon(e.s), course: '', ready: false };
+        k.subjects.push(sj); added++;
+      }
+      S.map[mk] = sj.id;
+    });
+    Object.keys(_planCache).forEach(x => delete _planCache[x]);
+    return added;
+  }
+
   /* ---- нагадування: учні, які не пройшли тести за уроки, що вже відбулися ---- */
   function overdueOf(D, uid, id) {
     const past = pastLessons(id); if (!past.length) return [];
@@ -1771,7 +1859,14 @@
     user = u;
     if (!u && err) { setChrome(); renderLogin(err); return; }
     if (u && Store.getCatalog) {
-      try { const remote = await Store.getCatalog(); if (remote && remote.length) applyCatalog(remote); }
+      try {
+        const remote = await Store.getCatalog();
+        if (remote && remote.length) {
+          /* класи, що з’явилися в стандартному каталозі пізніше (наприклад, 1 клас), додаються автоматично */
+          const have = new Set(remote.map(k => +k.cls));
+          applyCatalog(remote.concat(BASE_CATALOG.filter(k => !have.has(+k.cls))));
+        }
+      }
       catch (e) { console.warn('Каталог з бази не завантажено', e); }
     }
     if (u && Store.getSchedule && u.role !== 'pending') {
