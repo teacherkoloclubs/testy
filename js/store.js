@@ -212,6 +212,28 @@
       async saveCatalog(classes) {
         await db.collection('config').doc('catalog').set({ classes, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
       },
+      /* ---- чат учня з вчителем: колекція messages ----
+         {uid (учень), cls, course, studentName, from, role 's'|'t', name, text, atMs, read} */
+      chatSubscribe(me, cb) {
+        const ok = qs => cb(qs.docs.map(d => Object.assign({ id: d.id }, d.data())), qs);
+        const err = e => { console.warn('chat', e); cb(null); };
+        if (me.role === 'student') return db.collection('messages').where('uid', '==', me.uid).onSnapshot(ok, err);
+        if (me.admin) return db.collection('messages').orderBy('atMs', 'desc').limit(800).onSnapshot(ok, err);
+        const subs = (me.subjects || []).slice(0, 30);
+        if (!subs.length) { cb([]); return () => {}; }
+        return db.collection('messages').where('course', 'in', subs).onSnapshot(ok, err);
+      },
+      async chatSend(m) {
+        const u = auth.currentUser; if (!u) throw new Error('Немає входу');
+        m.from = u.uid; m.atMs = Date.now(); m.read = false;
+        m.at = firebase.firestore.FieldValue.serverTimestamp();
+        await db.collection('messages').add(m);
+      },
+      async chatMarkRead(ids) {
+        const batch = db.batch(); ids.slice(0, 400).forEach(id => batch.update(db.collection('messages').doc(id), { read: true }));
+        await batch.commit();
+      },
+      async chatDelete(id) { await db.collection('messages').doc(id).delete(); },
       /* розклад уроків, імпортований зі «Шкільного розкладу» (без ПІБ учнів) */
       async getSchedule() {
         const d = await db.collection('config').doc('schedule').get();

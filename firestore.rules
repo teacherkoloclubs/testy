@@ -74,5 +74,29 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if isAdmin() || teachesCourse(resource.data.course);
     }
+  
+    // Чат учня з вчителем. Кожне повідомлення належить до розмови «учень + предмет».
+    // Учень бачить і пише лише у своїх розмовах і лише з предметів свого класу;
+    // вчитель — у розмовах своїх предметів; адміністратор — усі.
+    match /messages/{id} {
+      allow read: if isAdmin()
+        || teachesCourse(resource.data.course)
+        || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if request.resource.data.from == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000
+        && request.resource.data.read == false
+        && ((isStudent() && request.resource.data.role == 's'
+              && request.resource.data.uid == request.auth.uid
+              && request.resource.data.cls == me().cls)
+          || ((isAdmin() || teachesCourse(request.resource.data.course)) && request.resource.data.role == 't'));
+      // позначити «прочитано» може лише співрозмовник; змінювати текст не можна
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+        && ((signedIn() && resource.data.uid == request.auth.uid && resource.data.role == 't')
+          || ((isAdmin() || teachesCourse(resource.data.course)) && resource.data.role == 's'));
+      allow delete: if isAdmin() || teachesCourse(resource.data.course)
+        || (signedIn() && resource.data.from == request.auth.uid);
+    }
   }
 }

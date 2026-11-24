@@ -155,10 +155,10 @@
     top.hidden = !user;
     if (!user) return;
     const links = isAdmin()
-      ? [['#/', 'Класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/teacher/teachers', 'Вчителі'], ['#/teacher/subjects', 'Предмети'], ['#/teacher/schedule', 'Розклад']]
-      : isTeacher() ? [['#/', 'Мої класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні']]
+      ? [['#/', 'Класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/teacher/teachers', 'Вчителі'], ['#/teacher/subjects', 'Предмети'], ['#/teacher/schedule', 'Розклад'], ['#/chat', '💬 Чат']]
+      : isTeacher() ? [['#/', 'Мої класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/chat', '💬 Чат']]
       : user.role === 'pending' ? []
-      : [['#/', 'Мої предмети'], ['#/my', 'Мої результати']];
+      : [['#/', 'Мої предмети'], ['#/my', 'Мої результати'], ['#/chat', '💬 Чат']];
     const h = location.hash || '#/';
     document.getElementById('topnav').innerHTML = links.map(([href, t]) =>
       `<a href="${href}" class="${(href === '#/' ? (h === '#/' || h.startsWith('#/class') || h.startsWith('#/course')) : h.startsWith(href)) ? 'active' : ''}">${t}</a>`).join('');
@@ -172,6 +172,7 @@
       b => b.querySelector('#mOut').onclick = () => { history.replaceState(null, '', '#/'); lastHash = '#/'; Store.signOut(); });
     const pwBtn = document.getElementById('pwBtn');
     if (pwBtn) pwBtn.onclick = passwordDialog;
+    chatBadge();
   }
   function passwordDialog() {
     modal(`<h2>🔑 Змінити пароль</h2>
@@ -189,6 +190,155 @@
         try { await Store.changePassword(o, n); close(); toast('Пароль змінено'); }
         catch (e) { err.textContent = e.message; b.disabled = false; b.textContent = 'Змінити'; }
       });
+  }
+
+  /* ---------------- чат учня з вчителем ---------------- */
+  let CHAT = { list: [], unsub: null, uid: null, ready: false };
+  const chatMine = m => m.from === user.uid;
+  const chatUnreadFor = m => !m.read && (user.role === 'student' ? m.role === 't' : m.role === 's');
+  function chatStart() {
+    if (!Store.chatSubscribe || !user || user.role === 'pending') return;
+    if (CHAT.unsub && CHAT.uid === user.uid) return;
+    chatStop();
+    CHAT.uid = user.uid;
+    CHAT.unsub = Store.chatSubscribe({ uid: user.uid, role: user.role, admin: isAdmin(), subjects: user.subjects || [] }, list => {
+      if (!list) return;
+      CHAT.list = list.sort((a, b) => (a.atMs || 0) - (b.atMs || 0)); CHAT.ready = true;
+      chatBadge();
+      if (CHAT.onChange) CHAT.onChange();
+    });
+  }
+  function chatStop() { if (CHAT.unsub) { try { CHAT.unsub(); } catch (e) {} } CHAT = { list: [], unsub: null, uid: null, ready: false }; }
+  function chatBadge() {
+    const a = document.querySelector('#topnav a[href="#/chat"]'); if (!a) return;
+    const n = CHAT.list.filter(chatUnreadFor).length;
+    a.innerHTML = `💬 Чат${n ? `<span class="nav-badge">${n > 99 ? '99+' : n}</span>` : ''}`;
+  }
+  /* хто веде предмет у класі — за розкладом */
+  function teacherNamesFor(course, cls) {
+    if (!SCHED || !SCHED.entries) return [];
+    const map = SCHED.map || {}; const out = new Set();
+    SCHED.entries.forEach(e => { if (+e.g === +cls && (map[e.s + '|' + e.g] === course || autoSubjectSafe(e.s, e.g) === course)) (e.t || []).forEach(t => out.add(t)); });
+    return [...out];
+  }
+  function autoSubjectSafe(s, g) { try { return typeof autoSubject === 'function' ? autoSubject(s, g) : null; } catch (e) { return null; } }
+  function chatThreads() {
+    const th = {};
+    CHAT.list.forEach(m => {
+      const k = m.uid + '|' + m.course;
+      const t = th[k] || (th[k] = { key: k, uid: m.uid, course: m.course, cls: m.cls, studentName: m.studentName, msgs: [], unread: 0 });
+      t.msgs.push(m); if (chatUnreadFor(m)) t.unread++;
+      if (m.studentName) t.studentName = m.studentName;
+    });
+    return Object.values(th).map(t => Object.assign(t, { last: t.msgs[t.msgs.length - 1] })).sort((a, b) => (b.last.atMs || 0) - (a.last.atMs || 0));
+  }
+  function subjInfo(course) {
+    for (const k of CATALOG) for (const s of k.subjects) if (s.id === course) return { name: s.name, icon: s.icon || '📘', cls: k.cls };
+    return { name: course, icon: '📘', cls: '' };
+  }
+  const chatTime = ms => {
+    if (!ms) return ''; const d = new Date(ms), now = new Date();
+    const same = d.toDateString() === now.toDateString();
+    return same ? d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+  };
+  const chatText = t => esc(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, '<br>');
+
+  async function renderChat(a, b) {
+    chatStart();
+    const student = user.role === 'student';
+    let roster = null; /* для вчителя: учні, щоб почати нову розмову */
+    let filter = '';
+    const draw = () => {
+      const threads = chatThreads();
+      let items;
+      if (student) {
+        const k = CATALOG.find(x => +x.cls === +user.cls);
+        const subs = k ? visibleSubjects(k) : [];
+        items = subs.map(s => { const t = threads.find(x => x.course === s.id && x.uid === user.uid);
+          return { key: user.uid + '|' + s.id, uid: user.uid, course: s.id, cls: user.cls, icon: s.icon || '📘', title: esc(s.name), sub: t ? (chatMine(t.last) ? 'Ви: ' : '') + t.last.text : (teacherNamesFor(s.id, user.cls).join(', ') || 'Напиши вчителю'), last: t && t.last, unread: t ? t.unread : 0 }; })
+          .sort((x, y) => ((y.last && y.last.atMs) || 0) - ((x.last && x.last.atMs) || 0));
+      } else {
+        items = threads.filter(t => canCourse(t.course)).map(t => { const si = subjInfo(t.course);
+          return { key: t.key, uid: t.uid, course: t.course, cls: t.cls, title: `${t.studentName || 'Учень'} <small>${t.cls} кл.</small>`, sub: `${si.icon} ${si.name} · ${chatMine(t.last) ? 'Ви: ' : ''}${t.last.text}`, last: t.last, unread: t.unread, name: t.studentName }; });
+        if (filter) items = items.filter(x => (x.name || '').toLowerCase().includes(filter));
+      }
+      const selKey = student ? (a ? user.uid + '|' + a : '') : (a && b ? b + '|' + a : '');
+      const sel = items.find(x => x.key === selKey) || (selKey ? (() => {
+        if (student) return null;
+        const st = roster && roster.find(s => s.uid === b); const si = subjInfo(a);
+        return { key: selKey, uid: b, course: a, cls: st ? st.cls : si.cls, name: st ? st.name : 'Учень', title: `${st ? esc(st.name) : 'Учень'} <small>${st ? st.cls : si.cls} кл.</small>` };
+      })() : null);
+      const msgs = sel ? CHAT.list.filter(m => m.uid === sel.uid && m.course === sel.course) : [];
+      const si = sel ? subjInfo(sel.course) : null;
+      const head = sel ? (student ? `<b>${si.icon} ${esc(si.name)}</b><small>${esc(teacherNamesFor(sel.course, user.cls).join(', ') || 'Вчитель предмета')}</small>`
+        : `<b>${sel.title}</b><small>${si.icon} ${esc(si.name)}</small>`) : '';
+      let lastDay = '';
+      const bubbles = msgs.map(m => { const day = m.atMs ? new Date(m.atMs).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' }) : '';
+        const sep = day !== lastDay ? `<div class="ch-day">${day}</div>` : ''; lastDay = day;
+        return `${sep}<div class="ch-msg ${chatMine(m) ? 'me' : ''}"><div class="ch-bub">${!chatMine(m) ? `<span class="ch-from">${esc(m.name || '')}</span>` : ''}${chatText(m.text)}<span class="ch-t">${chatTime(m.atMs)}${chatMine(m) ? (m.read ? ' ✓✓' : ' ✓') : ''}</span></div>${(!student || chatMine(m)) ? `<button class="ch-del" data-del="${m.id}" title="Видалити">×</button>` : ''}</div>`; }).join('');
+      $app.innerHTML = `
+        <div class="page-head"><h1>💬 Чат</h1><p>${student ? 'Постав запитання вчителю свого предмета. Вчитель відповість, щойно побачить повідомлення.' : 'Повідомлення від учнів ваших предметів. Нову розмову можна почати з будь-яким учнем.'}</p></div>
+        <div class="chat ${sel ? 'has-sel' : ''}">
+          <aside class="card ch-list">
+            ${!student ? `<div class="ch-tools"><input class="input" id="chFind" placeholder="🔎 Пошук учня" value="${esc(filter)}"><button class="btn brand sm" id="chNew">＋ Нова</button></div>` : ''}
+            ${items.length ? items.map(x => `<a class="ch-item ${sel && x.key === sel.key ? 'on' : ''}" href="#/chat/${x.course}${student ? '' : '/' + x.uid}">
+              <span class="ch-ava">${student ? x.icon : esc(initials(x.name || '?'))}</span>
+              <span class="ch-meta"><b>${x.title}</b><small>${esc((x.sub || '').slice(0, 70))}</small></span>
+              <span class="ch-side">${x.last ? `<small>${chatTime(x.last.atMs)}</small>` : ''}${x.unread ? `<i class="ch-n">${x.unread}</i>` : ''}</span></a>`).join('')
+              : `<div class="empty" style="padding:26px 10px"><span class="e">💬</span>${student ? 'Предметів поки немає' : (CHAT.ready ? 'Розмов поки немає. Натисніть «＋ Нова», щоб написати учню.' : 'Завантаження…')}</div>`}
+          </aside>
+          <section class="card ch-pane">
+            ${sel ? `<div class="ch-head"><a class="ch-back" href="#/chat" title="До списку">←</a><div>${head}</div></div>
+              <div class="ch-msgs" id="chMsgs">${bubbles || `<div class="ch-empty">${student ? '👋 Напиши перше повідомлення — наприклад, запитай про незрозуміле завдання.' : 'Повідомлень ще немає. Напишіть учню першим.'}</div>`}</div>
+              <form class="ch-form" id="chForm"><textarea class="input" id="chText" rows="1" maxlength="2000" placeholder="Повідомлення…" required></textarea><button class="btn brand" type="submit" title="Надіслати">➤</button></form>`
+            : `<div class="ch-empty big"><span>💬</span>${student ? 'Обери предмет ліворуч' : 'Оберіть розмову ліворуч'}</div>`}
+          </section>
+        </div>`;
+      const box = $app.querySelector('#chMsgs'); if (box) box.scrollTop = box.scrollHeight;
+      const unread = msgs.filter(chatUnreadFor).map(m => m.id);
+      if (unread.length && Store.chatMarkRead) Store.chatMarkRead(unread).catch(e => console.warn(e));
+      const f = $app.querySelector('#chForm');
+      if (f) {
+        const ta = f.querySelector('#chText');
+        ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } });
+        ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; });
+        f.onsubmit = async e => {
+          e.preventDefault(); const text = ta.value.trim(); if (!text) return;
+          const btn = f.querySelector('button'); btn.disabled = true; ta.value = '';
+          try {
+            await Store.chatSend({ uid: sel.uid, cls: +sel.cls, course: sel.course, studentName: student ? user.name : (sel.name || ''), role: student ? 's' : 't', name: user.name, text });
+          } catch (ex) { toast('Не надіслано: ' + ex.message); const n = $app.querySelector('#chText'); if (n) n.value = text; }
+          const nb2 = $app.querySelector('#chForm button'); if (nb2) nb2.disabled = false;
+        };
+        if (!('ontouchstart' in window)) ta.focus();
+      }
+      $app.querySelectorAll('[data-del]').forEach(x => x.onclick = () => modal(`<h2>Видалити повідомлення?</h2>
+        <div class="m-actions"><button class="btn light" data-close>Ні</button><button class="btn danger" data-close id="mDel">Видалити</button></div>`,
+        bx => bx.querySelector('#mDel').onclick = () => Store.chatDelete(x.dataset.del).catch(e => toast(e.message))));
+      const fi = $app.querySelector('#chFind');
+      if (fi) fi.oninput = () => { filter = fi.value.trim().toLowerCase(); const pos = fi.selectionStart; draw(); const n = $app.querySelector('#chFind'); n.focus(); n.setSelectionRange(pos, pos); };
+      const nb = $app.querySelector('#chNew');
+      if (nb) nb.onclick = async () => {
+        if (!roster) roster = await Store.listStudents();
+        const subsBy = {}; myClasses().forEach(k => subsBy[k.cls] = (isAdmin() ? k.subjects : visibleSubjects(k)).filter(s => canCourse(s.id)));
+        const sts = roster.filter(s => (subsBy[s.cls] || []).length).sort((x, y) => x.cls - y.cls || x.name.localeCompare(y.name, 'uk'));
+        modal(`<h2>✉️ Нова розмова</h2>
+          <div class="field"><label>Учень</label><select class="input" id="nSt">${sts.map(s => `<option value="${s.uid}">${s.cls} кл. · ${esc(s.name)}</option>`).join('')}</select></div>
+          <div class="field"><label>Предмет</label><select class="input" id="nSub"></select></div>
+          <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" data-close id="nGo">Відкрити</button></div>`, bx => {
+          const st = bx.querySelector('#nSt'), su = bx.querySelector('#nSub');
+          const fill = () => { const s = sts.find(x => x.uid === st.value); su.innerHTML = (s ? subsBy[s.cls] : []).map(x => `<option value="${x.id}">${x.icon || '📘'} ${esc(x.name)}</option>`).join(''); };
+          st.onchange = fill; fill();
+          bx.querySelector('#nGo').onclick = () => { if (st.value && su.value) location.hash = `#/chat/${su.value}/${st.value}`; };
+        });
+      };
+    };
+    if (!student && a && b) { try { roster = await Store.listStudents(); } catch (e) { roster = []; } }
+    CHAT.onChange = () => { if ((location.hash || '').startsWith('#/chat')) {
+      const ta = $app.querySelector('#chText'); const keep = ta ? ta.value : ''; const foc = document.activeElement === ta;
+      draw(); const n = $app.querySelector('#chText'); if (n && keep) { n.value = keep; } if (n && foc) n.focus(); } };
+    view = { destroy() { CHAT.onChange = null; } };
+    draw();
   }
 
   /* ---------------- маршрутизатор ---------------- */
@@ -221,6 +371,7 @@
       if (p[0] === 'test') return await renderTest(p[1], p[2], p[3]);
       if (p[0] === 'my') return await renderMy(p[1]);
       if (p[0] === 'games') return await renderGames(p[1], p[2], p[3]);
+      if (p[0] === 'chat') return await renderChat(p[1], p[2]);
       if (p[0] === 'teacher' && isStaff()) {
         if (p[1] === 'students') return await renderStudents();
         if (p[1] === 'results') return await renderResults(p[2], p[3], p[4]);
@@ -423,6 +574,8 @@
     if (course.primary) document.body.classList.add('theme-primary');
     const lesson = course.sections.flatMap(s => s.lessons).find(l => l.id === lid);
     if (!lesson) throw new Error('Урок не знайдено');
+    /* анімована теорія за підручником: data/courses/<курс>/t<розділ>.js (якщо є) */
+    try { await loadScript(`data/courses/${id}/t${lesson.section.n}.js`); if (Slides.applyTheory) Slides.applyTheory(course); } catch (e) { /* теорії для розділу ще немає */ }
     Protect.set(true, user.role === 'student');
     view = Slides.run($app, lesson, {
       color: meta.color,
@@ -1106,7 +1259,7 @@
         <div class="card stat-tile"><div class="v">${r.done == null ? '—' : Math.round(r.done * 100) + '%'}</div><div class="k">Пройдено уроків</div></div></div>
       <h3 class="rs-h">За предметами</h3><div class="table-wrap"><table class="tbl"><thead><tr><th>Предмет</th><th class="c">Середній</th><th style="min-width:130px">Уроки</th><th class="c">Спроб</th><th class="c">Остання</th><th></th></tr></thead><tbody>
         ${r.subs.map((x, i) => { const m = r.ms[i]; return `<tr><td>${esc(x.icon)} ${esc(x.name)}</td><td class="c"><span class="cell ${gradeClass(m.avg)}">${m.avg ?? '—'}</span></td><td>${doneBar(m.done)}</td><td class="c">${m.attempts}</td><td class="c">${ago(m.last)}</td>
-          <td><a class="btn light sm" href="#/teacher/results/journal/${x.cls}/${x.id}" data-close title="Журнал">📒</a></td></tr>`; }).join('')}</tbody></table></div>
+          <td><a class="btn light sm" href="#/teacher/results/journal/${x.cls}/${x.id}" data-close title="Журнал">📒</a> <a class="btn light sm" href="#/chat/${x.id}/${s.uid}" data-close title="Написати учню">💬</a></td></tr>`; }).join('')}</tbody></table></div>
       <h3 class="rs-h">Усі спроби (${rs.length})</h3>
       <p class="muted" style="font-size:13px;font-weight:700;margin-bottom:8px">Зарахований тест блокується для учня. Щоб дозволити пройти його ще раз, видаліть спробу (✕).</p>
       ${attemptsTable(D, rs, true, true)}
@@ -1908,6 +2061,7 @@
     if (u && Store.getSchedule && u.role !== 'pending') {
       try { SCHED = await Store.getSchedule(); } catch (e) { console.warn('Розклад не завантажено', e); SCHED = null; }
     }
+    if (u) chatStart(); else chatStop();
     if (u && (!location.hash || location.hash === '#/login')) history.replaceState(null, '', '#/');
     skipGuard = true;
     route();

@@ -80,6 +80,7 @@
 
   function slideHtml(s, lesson, n) {
     if (IX_TYPES.includes(s.type) || s.type === 'flip') return ixHtml(s, n);
+    if (T_RENDER[s.type]) return T_RENDER[s.type](s);
     const side = s.e ? `<div class="side-emoji">${s.e}</div>` : '';
     const p = s.p ? `<p>${rich(s.p)}</p>` : '';
     const list = s.list ? `<ul class="s-list">${s.list.map(x => `<li>${rich(x)}</li>`).join('')}</ul>` : '';
@@ -108,6 +109,73 @@
         return `<div class="slide"><div class="s-row"><div><h2>${esc(s.h)}</h2>${p}${code}${list}${steps}${cards}${after}</div>${s.cards ? '' : side}</div></div>`;
     }
   }
+
+
+  /* ---------- анімовані слайди з теорією (шар THEORY) ----------
+     Кожен елемент з класом .an з’являється по черзі (--d — порядковий номер).
+     s.say — пояснення «від учителя» (показується в бульбашці й може озвучуватися). */
+  function rt(s) { /* rich + індекси/степені: x^{2}, v_{0}, ==виділення== */
+    return rich(s).replace(/\^\{(.+?)\}/g, '<sup>$1</sup>').replace(/_\{(.+?)\}/g, '<sub>$1</sub>').replace(/==(.+?)==/g, '<mark>$1</mark>');
+  }
+  function T_TYPES_has(t) { return /^t[a-z]+$/.test(t || '') && T_RENDER[t]; }
+  const sayBox = s => s.say ? `<div class="t-say an" style="--d:${s._n || 6}"><span class="t-say-ava">🧑‍🏫</span><span class="t-say-txt">${rt(s.say)}</span></div>` : '';
+  const tHead = (s, label) => `<div class="t-top"><div class="s-label an" style="--d:0">${label}</div><button class="t-replay" title="Повторити анімацію" aria-label="Повторити анімацію">↻</button>${'speechSynthesis' in window ? '<button class="t-speak" title="Озвучити пояснення" aria-label="Озвучити">🔊</button>' : ''}</div>${s.h ? `<h2 class="an" style="--d:0">${rt(s.h)}</h2>` : ''}`;
+  const T_RENDER = {
+    tx(s) { /* пояснення: вступ, пункти, примітка */
+      let d = 1;
+      const lead = s.lead ? `<p class="t-lead an" style="--d:${d++}">${rt(s.lead)}</p>` : '';
+      const pts = (s.pts || []).map(x => `<li class="an" style="--d:${d++}">${rt(x)}</li>`).join('');
+      const note = s.note ? `<div class="t-note an" style="--d:${d++}">💡 ${rt(s.note)}</div>` : '';
+      s._n = d;
+      return `<div class="slide t-slide t-tx">${tHead(s, s.label || '📘 Теорія')}<div class="t-row"><div class="t-main">${lead}${pts ? `<ul class="t-pts">${pts}</ul>` : ''}${note}</div>${s.e ? `<div class="t-emoji an" style="--d:1">${esc(s.e)}</div>` : ''}</div>${sayBox(s)}</div>`;
+    },
+    tdef(s) { /* термін і визначення */
+      let d = 2; const ex = (s.ex || []).map(x => `<span class="an" style="--d:${d++}">${rt(x)}</span>`).join('');
+      s._n = d + 1;
+      return `<div class="slide t-slide t-def">${tHead(Object.assign({}, s, { h: '' }), s.label || '📌 Запам’ятай')}
+        <div class="t-term an" style="--d:0">${s.e ? `<span class="t-term-e">${esc(s.e)}</span>` : ''}${rt(s.term)}</div>
+        <div class="t-defbox an" style="--d:1">${rt(s.def)}</div>${ex ? `<div class="t-ex"><b class="an" style="--d:2">Приклади:</b>${ex}</div>` : ''}${s.note ? `<div class="t-note an" style="--d:${d}">💡 ${rt(s.note)}</div>` : ''}${sayBox(s)}</div>`;
+    },
+    tflow(s) { /* процес / ланцюжок */
+      const n = (s.items || []).length;
+      s._n = n * 2 + 2;
+      return `<div class="slide t-slide t-flow ${s.cycle ? 'cyc' : ''}">${tHead(s, s.label || '🔄 Як це відбувається')}${s.lead ? `<p class="t-lead an" style="--d:1">${rt(s.lead)}</p>` : ''}
+        <div class="t-chain" style="--n:${n}">${s.items.map((it, k) => `${k ? `<span class="t-arrow an" style="--d:${k * 2 + 1}"></span>` : ''}<div class="t-node an" style="--d:${k * 2 + 2}"><span class="t-node-e">${esc(it[0])}</span><b>${rt(it[1])}</b>${it[2] ? `<small>${rt(it[2])}</small>` : ''}</div>`).join('')}</div>
+        ${s.note ? `<div class="t-note an" style="--d:${n * 2 + 1}">💡 ${rt(s.note)}</div>` : ''}${sayBox(s)}</div>`;
+    },
+    tcmp(s) { /* порівняння */
+      let d = 1;
+      const cols = s.cols.map((c, k) => { const st = d++; return `<div class="t-col an ${k % 2 ? 'from-r' : 'from-l'}" style="--d:${st}"><div class="t-col-h">${c[1] ? `<span>${esc(c[1])}</span>` : ''}${rt(c[0])}</div><ul>${(c[2] || []).map(x => `<li class="an" style="--d:${d++}">${rt(x)}</li>`).join('')}</ul></div>`; }).join('');
+      s._n = d + 1;
+      return `<div class="slide t-slide t-cmp">${tHead(s, s.label || '⚖️ Порівняємо')}<div class="t-cols" style="--n:${s.cols.length}">${cols}</div>${s.note ? `<div class="t-note an" style="--d:${d}">💡 ${rt(s.note)}</div>` : ''}${sayBox(s)}</div>`;
+    },
+    tsteps(s) { /* розв’язування крок за кроком */
+      let d = 2; const st = (s.steps || []).map((x, k) => `<li class="an" style="--d:${d++}"><i>${k + 1}</i><span>${rt(x)}</span></li>`).join('');
+      s._n = d + 1;
+      return `<div class="slide t-slide t-steps">${tHead(s, s.label || '🧩 Розв’язуємо разом')}${s.task ? `<div class="t-task an" style="--d:1">${rt(s.task)}</div>` : ''}<ol class="t-stl">${st}</ol>${s.ans ? `<div class="t-ans an" style="--d:${d}">✅ ${rt(s.ans)}</div>` : ''}${sayBox(s)}</div>`;
+    },
+    tformula(s) { /* формула з розшифруванням */
+      let d = 2; const parts = (s.parts || []).map(x => `<div class="t-fp an" style="--d:${d++}"><b>${rt(x[0])}</b><span>${rt(x[1])}</span>${x[2] ? `<em>${rt(x[2])}</em>` : ''}</div>`).join('');
+      s._n = d + 1;
+      return `<div class="slide t-slide t-formula">${tHead(s, s.label || '🧮 Формула')}${s.lead ? `<p class="t-lead an" style="--d:1">${rt(s.lead)}</p>` : ''}<div class="t-f an" style="--d:1">${rt(s.f)}</div><div class="t-fparts">${parts}</div>${s.note ? `<div class="t-note an" style="--d:${d}">💡 ${rt(s.note)}</div>` : ''}${sayBox(s)}</div>`;
+    },
+    tgrid(s) { /* картки-категорії */
+      let d = 1; const it = (s.items || []).map(x => `<div class="t-card an" style="--d:${d++}"><span class="t-card-e">${esc(x[0])}</span><b>${rt(x[1])}</b>${x[2] ? `<small>${rt(x[2])}</small>` : ''}</div>`).join('');
+      s._n = d + 1;
+      return `<div class="slide t-slide t-grid">${tHead(s, s.label || '🗂 Розглянемо')}${s.lead ? `<p class="t-lead an" style="--d:1">${rt(s.lead)}</p>` : ''}<div class="t-cards" style="--n:${Math.min((s.items || []).length, 4)}">${it}</div>${s.note ? `<div class="t-note an" style="--d:${d}">💡 ${rt(s.note)}</div>` : ''}${sayBox(s)}</div>`;
+    },
+    ttime(s) { /* часова стрічка */
+      let d = 1; const it = (s.items || []).map(x => `<div class="t-tl an" style="--d:${d++}"><b>${rt(x[0])}</b><span>${rt(x[1])}</span></div>`).join('');
+      s._n = d + 1;
+      return `<div class="slide t-slide t-time">${tHead(s, s.label || '🕰 Історія')}<div class="t-line"><i class="an" style="--d:1"></i>${it}</div>${s.note ? `<div class="t-note an" style="--d:${d}">💡 ${rt(s.note)}</div>` : ''}${sayBox(s)}</div>`;
+    },
+    tmap(s) { /* карта знань: центр і гілки */
+      const n = (s.items || []).length; let d = 2;
+      const it = s.items.map((x, k) => { const a = ((k / n) * 360 - 90) * Math.PI / 180; return `<div class="t-br an" style="--d:${d++};--x:${(Math.cos(a) * 36).toFixed(1)}%;--y:${(Math.sin(a) * 39).toFixed(1)}%"><span>${esc(x[0])}</span><b>${rt(x[1])}</b>${x[2] ? `<small>${rt(x[2])}</small>` : ''}</div>`; }).join('');
+      s._n = d + 1;
+      return `<div class="slide t-slide t-map">${tHead(s, s.label || '🧠 Карта знань')}<div class="t-mapbox" style="--n:${n}"><div class="t-center an" style="--d:1">${s.e ? `<span>${esc(s.e)}</span>` : ''}${rt(s.center)}</div>${it}</div>${s.note ? `<div class="t-note an" style="--d:${d}">💡 ${rt(s.note)}</div>` : ''}${sayBox(s)}</div>`;
+    }
+  };
 
   /* ---------- нормалізація відповіді для «Впиши відповідь» ---------- */
   function norm(v) {
@@ -333,6 +401,8 @@
     function show(k) {
       i = Math.max(0, Math.min(els.length - 1, k));
       els.forEach((el, j) => { el.classList.toggle('on', j === i); el.classList.toggle('prev', j < i); });
+      if (window.speechSynthesis) speechSynthesis.cancel();
+      replay(els[i]);
       root.querySelector('#sCount').textContent = (i + 1) + ' / ' + els.length;
       root.querySelector('#sBar').style.width = ((i + 1) / els.length * 100) + '%';
       root.querySelector('#sPrev').disabled = i === 0;
@@ -345,7 +415,18 @@
       if (document.fullscreenElement) document.exitFullscreen();
       else if (stage.requestFullscreen) stage.requestFullscreen().catch(() => {});
     };
+    function replay(el) { if (!el || !el.classList.contains('t-slide')) return; el.classList.remove('anim'); void el.offsetWidth; el.classList.add('anim'); }
+    function speak(el) {
+      if (!window.speechSynthesis) return;
+      if (speechSynthesis.speaking) { speechSynthesis.cancel(); return; }
+      const txt = [...el.querySelectorAll('h2, .t-term, .t-defbox, .t-lead, .t-pts li, .t-node b, .t-node small, .t-col-h, .t-col li, .t-task, .t-stl li span, .t-ans, .t-fp, .t-card b, .t-card small, .t-tl, .t-center, .t-br, .t-note, .t-say-txt')].map(x => x.textContent.replace(/[💡✅]/g, '').trim()).filter(Boolean).join('. ');
+      const u = new SpeechSynthesisUtterance(txt); u.lang = 'uk-UA'; u.rate = 0.95;
+      const v = speechSynthesis.getVoices().find(v => /^uk/i.test(v.lang)); if (v) u.voice = v;
+      speechSynthesis.speak(u);
+    }
     stage.addEventListener('click', e => {
+      const rp = e.target.closest('.t-replay'); if (rp) { replay(rp.closest('.slide')); return; }
+      const sp = e.target.closest('.t-speak'); if (sp) { speak(sp.closest('.slide')); return; }
       const r = e.target.closest('[data-reveal]');
       if (r) { r.nextElementSibling.hidden = false; r.remove(); return; }
       const ns = e.target.closest('[data-next-step]');
@@ -369,7 +450,7 @@
       if (Math.abs(dx) > 60) show(i + (dx < 0 ? 1 : -1));
     });
     show(0);
-    return { destroy() { document.removeEventListener('keydown', key); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } };
+    return { destroy() { if (window.speechSynthesis) speechSynthesis.cancel(); document.removeEventListener('keydown', key); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } };
   }
 
   /* Доповнення уроків: файли data/courses/<курс>/xN.js додають слайди в наявні уроки.
@@ -390,5 +471,30 @@
     }));
   }
 
-  window.Slides = { run, applyExt };
+
+  /* Теорія: data/courses/<курс>/t<розділ>.js → window.THEORY[курс][урок] = [слайди].
+     Нові анімовані слайди стають основою презентації: обкладинка → теорія,
+     між якою рівномірно розставлено інтерактивні завдання → словничок.
+     Старі статичні слайди (звичайні, «Запам’ятай», «Цікаво») замінюються теорією. */
+  function applyTheory(course) {
+    const th = (window.THEORY || {})[course.id]; if (!th) return;
+    course.sections.forEach(sec => sec.lessons.forEach(l => {
+      const add = th[l.id]; if (!add || !add.length || l._th) return;
+      const cur = l.slides || [];
+      const cover = cur.filter(x => x.type === 'cover');
+      const words = cur.filter(x => x.type === 'words');
+      const keep = cur.filter(x => x.type && x.type !== 'cover' && x.type !== 'words' && x.type !== 'def' && x.type !== 'fact' && !T_RENDER[x.type]);
+      const out = cover.slice();
+      const gap = Math.max(1, Math.round(add.length / Math.max(1, keep.length)));
+      let ki = 0;
+      add.forEach((t, k) => {
+        out.push(t);
+        if ((k + 1) % gap === 0 && ki < keep.length && k >= 1) out.push(keep[ki++]);
+      });
+      while (ki < keep.length) out.push(keep[ki++]);
+      l.slides = out.concat(words); l._th = true;
+    }));
+  }
+
+  window.Slides = { run, applyExt, applyTheory };
 })();
