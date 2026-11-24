@@ -290,3 +290,19 @@ firestore.rules         — правила безпеки бази даних
 
 ## QR-код на картках з логінами
 На кожній картці з логіном і паролем учня є QR-код сайту (`img/qr-site.png`, підпис — `tinyurl.com/anriivka`). Змінити картинку чи підпис можна в `js/config.js` (`qrImage`, `qrLabel`).
+
+## Симуляції (власні, інтерактивні)
+- Ядро: `js/sims.js` (реєстр типів, елементи керування, полотно, завдання з перевіркою).
+- Бібліотеки типів: `js/sims/phys.js`, `js/sims/math.js`, `js/sims/info.js`, `js/sims/biz.js` (підвантажуються за потреби).
+- Дані для курсу: `data/sims/<курс>.js` → `SIMS_DATA[курс][номер_розділу] = [{type, title, intro, cfg, tasks}]`.
+- Маршрути: `#/sims/<курс>` (усі симуляції курсу), `#/sim/<курс>/<розділ>/<i>`; у кожному розділі сторінки курсу є посилання 🧪.
+- Завдання: `{q, a, u, tol, hint, ex, opts}`; `a` може бути функцією від поточного стану симуляції.
+- Поле `lib` у симуляції дозволяє взяти тип з іншої бібліотеки (наприклад, `lib: 'info'` для `classify` у курсах підприємництва).
+- Готові типи:
+  - фізика: scale, motion, pendulum, density, collision, spring, pressure, buoyancy, heat, phase, coulomb, circuit, power, electrolysis, ampere, wave, lens, decay;
+  - математика: numray, balance, area, fraction, decimal, sieve, fracops, proportion, intline, coordplane;
+  - інформатика: classify (картки по кошиках, налаштовується в `cfg`), robot, turtle, pixels, textfmt, slidedesign, sheet (міні-таблиця з формулами), microbit, keyframes, password, html, packets, binary, vector, pytrace (покрокове виконання Python), compress, sorting, 3d, dbfilter;
+  - підприємництво: budget, tax (ставки 2026 р. — константа `TAX` у `js/sims/biz.js`), inflation, deposit, credit, breakeven, pricing.
+- Для нового предмета найпростіше почати з універсальних типів `classify`, `sheet` або `pytrace`: їм достатньо даних у `cfg`, без нового коду.
+
+**Правило для нових предметів:** для кожної теми (розділу) нового предмета потрібно додати презентацію, тест і симуляцію (`data/sims/<курс>.js`).

@@ -460,6 +460,8 @@
       if (p[0] === 'test') return await renderTest(p[1], p[2], p[3]);
       if (p[0] === 'units') return await renderUnits(p[1]);
       if (p[0] === 'kr') return await renderKr(p[1], p[2], p[3]);
+      if (p[0] === 'sims') return await renderSimList(p[1]);
+      if (p[0] === 'sim') return await renderSim(p[1], p[2], p[3]);
       if (p[0] === 'my') return await renderMy(p[1]);
       if (p[0] === 'games') return await renderGames(p[1], p[2], p[3]);
       if (p[0] === 'chat') return await renderChat(p[1], p[2], p[3]);
@@ -584,6 +586,7 @@
     $app.innerHTML = '<div class="loader"><span></span></div>';
     const course = await loadCourse(id);
     if (course.primary) document.body.classList.add('theme-primary');
+    const sims = await loadSims(id);
     const results = user.role === 'student' ? (await Store.myResults()).filter(r => r.course === id) : [];
     const bm = bestMap(results);
     const lessons = course.sections.flatMap(s => s.lessons);
@@ -617,10 +620,11 @@
           ${nextT ? `<a class="btn light sm" style="margin-top:12px" href="${nextT.href}">Наступний: ${esc(nextT.short)} →</a>` : '<p style="margin-top:8px">🎉 Усі тести виконано!</p>'}` : `<p style="font-size:14px">${lessons.length} ${plural(lessons.length, 'урок', 'уроки', 'уроків')} · ${course.sections.length} ${plural(course.sections.length, 'розділ', 'розділи', 'розділів')}</p>`}
         </div><div class="big-ico">${meta.icon}</div>
       </div>
-      ${hasUnits(id) ? unitsCard(id, results) : ''}${hasKr(id) ? krCard(id, results) : ''}
+      ${hasUnits(id) ? unitsCard(id, results) : ''}${hasKr(id) ? krCard(id, results) : ''}${simsCount(sims) ? simsCard(id, sims) : ''}
       ${course.sections.map(s => `
         <section class="section-block">
           <div class="section-head"><span class="sn" style="--sc:${s.color || meta.color}">${s.n}</span><h2>${esc(s.title)}</h2><span class="tag">${s.lessons.length} ${plural(s.lessons.length, 'урок', 'уроки', 'уроків')}</span></div>
+          ${(sims[s.n] || []).map((x, i) => `<a class="card sim-row" href="#/sim/${id}/${s.n}/${i}"><span class="sim-row-i">🧪</span><span><b>Симуляція: ${esc(x.title)}</b><small>Інтерактивна модель до теми розділу · з завданнями</small></span><span class="btn brand sm">Відкрити</span></a>`).join('')}
           <div class="lesson-list">
             ${s.lessons.map(l => `
               <div class="card lesson-row">
@@ -843,6 +847,46 @@
     return `<h3 class="rs-h" style="margin-top:14px">Успішність за величинами</h3><div class="u-weak">${ks.map(k => `<span class="tag ${c[k].ok / c[k].n < 0.5 ? 'warn' : 'ok'}">${esc(T.cats[k])}: ${c[k].ok}/${c[k].n}</span>`).join('')}</div>`;
   }
 
+
+
+  /* ---------------- симуляції ---------------- */
+  async function loadSims(id) {
+    window.SIMS_DATA = window.SIMS_DATA || {};
+    if (!window.SIMS_DATA[id]) { try { await loadScript(`data/sims/${id}.js`); } catch (e) { window.SIMS_DATA[id] = {}; } }
+    return window.SIMS_DATA[id] || {};
+  }
+  const simsCount = sims => Object.values(sims || {}).reduce((a, l) => a + l.length, 0);
+  const simsFlat = sims => Object.keys(sims).sort((a, b) => a - b).flatMap(n => sims[n].map((x, i) => ({ n: +n, i, x })));
+  function simsCard(id, sims) {
+    const n = simsCount(sims);
+    return `<a class="card lesson-row summary-row units-row sims-card" href="#/sims/${id}">
+      <span class="ln">🧪</span>
+      <div><h3>Симуляції</h3><div class="meta">${n} ${plural(n, 'інтерактивна модель', 'інтерактивні моделі', 'інтерактивних моделей')} до тем курсу · досліди й завдання</div></div>
+      <div class="lesson-actions"><span class="btn brand sm">Відкрити</span></div></a>`;
+  }
+  async function renderSimList(id) {
+    const meta = catalogSubject(id);
+    if (!meta || (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) || !canCourse(meta.id)) { location.hash = '#/'; return; }
+    $app.innerHTML = '<div class="loader"><span></span></div>';
+    const course = await loadCourse(id); const sims = await loadSims(id);
+    $app.innerHTML = `<div class="crumbs"><a href="#/course/${id}">${esc(meta.name)} · ${meta.cls} клас</a><span>›</span><span>Симуляції</span></div>
+      <div class="course-hero" style="--c:${meta.color}"><div><h1>🧪 Симуляції · ${esc(meta.name)}, ${meta.cls} клас</h1><p>Інтерактивні моделі до кожної теми: змінюй параметри, спостерігай, роби висновки й перевіряй себе завданнями.</p></div><div class="big-ico">🔬</div></div>
+      <div class="sim-grid">${course.sections.map(s => (sims[s.n] || []).map((x, i) => `<a class="card sim-tile" href="#/sim/${id}/${s.n}/${i}"><span class="sim-tile-n" style="--sc:${s.color || meta.color}">${s.n}</span><b>${esc(x.title)}</b><small>Розділ ${s.n}. ${esc(s.title)}</small></a>`).join('')).join('') || '<div class="card empty"><span class="e">🧪</span>Симуляції для цього курсу ще готуються.</div>'}</div>`;
+  }
+  async function renderSim(id, n, i) {
+    const meta = catalogSubject(id);
+    if (!meta || (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) || !canCourse(meta.id)) { location.hash = '#/'; return; }
+    $app.innerHTML = '<div class="loader"><span></span></div>';
+    const course = await loadCourse(id); const sims = await loadSims(id);
+    const list = simsFlat(sims), k = list.findIndex(x => x.n === +n && x.i === +(i || 0));
+    if (k < 0) { location.hash = '#/sims/' + id; return; }
+    const cur = list[k], sec = course.sections.find(s => s.n === cur.n) || { title: '' };
+    const prev = list[k - 1], next = list[k + 1];
+    const nav = `<div class="sim-nav">${prev ? `<a class="btn light sm" href="#/sim/${id}/${prev.n}/${prev.i}">← Попередня</a>` : ''}<a class="btn light sm" href="#/sims/${id}">Усі симуляції</a>${next ? `<a class="btn light sm" href="#/sim/${id}/${next.n}/${next.i}">Наступна →</a>` : ''}</div>`;
+    view = await Sims.open($app, { course: id, sim: cur.x, loadScript, nav,
+      subtitle: `${meta.name} · ${meta.cls} клас · Розділ ${cur.n}. ${sec.title}`,
+      crumbs: `<div class="crumbs"><a href="#/course/${id}">${esc(meta.name)} · ${meta.cls} клас</a><span>›</span><a href="#/sims/${id}">Симуляції</a><span>›</span><span>${esc(cur.x.title)}</span></div>` });
+  }
 
   /* ---------------- контрольні роботи з математики (5–6 кл.) ---------------- */
   const hasKr = id => /^math[56]$/.test(id || '');
