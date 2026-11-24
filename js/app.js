@@ -370,6 +370,7 @@
       if (p[0] === 'slides') return await renderSlides(p[1], p[2]);
       if (p[0] === 'test') return await renderTest(p[1], p[2], p[3]);
       if (p[0] === 'units') return await renderUnits(p[1]);
+      if (p[0] === 'kr') return await renderKr(p[1], p[2], p[3]);
       if (p[0] === 'my') return await renderMy(p[1]);
       if (p[0] === 'games') return await renderGames(p[1], p[2], p[3]);
       if (p[0] === 'chat') return await renderChat(p[1], p[2]);
@@ -527,7 +528,7 @@
           ${nextT ? `<a class="btn light sm" style="margin-top:12px" href="${nextT.href}">Наступний: ${esc(nextT.short)} →</a>` : '<p style="margin-top:8px">🎉 Усі тести виконано!</p>'}` : `<p style="font-size:14px">${lessons.length} ${plural(lessons.length, 'урок', 'уроки', 'уроків')} · ${course.sections.length} ${plural(course.sections.length, 'розділ', 'розділи', 'розділів')}</p>`}
         </div><div class="big-ico">${meta.icon}</div>
       </div>
-      ${hasUnits(id) ? unitsCard(id, results) : ''}
+      ${hasUnits(id) ? unitsCard(id, results) : ''}${hasKr(id) ? krCard(id, results) : ''}
       ${course.sections.map(s => `
         <section class="section-block">
           <div class="section-head"><span class="sn" style="--sc:${s.color || meta.color}">${s.n}</span><h2>${esc(s.title)}</h2><span class="tag">${s.lessons.length} ${plural(s.lessons.length, 'урок', 'уроки', 'уроків')}</span></div>
@@ -753,6 +754,104 @@
     return `<h3 class="rs-h" style="margin-top:14px">Успішність за величинами</h3><div class="u-weak">${ks.map(k => `<span class="tag ${c[k].ok / c[k].n < 0.5 ? 'warn' : 'ok'}">${esc(T.cats[k])}: ${c[k].ok}/${c[k].n}</span>`).join('')}</div>`;
   }
 
+
+  /* ---------------- контрольні роботи з математики (5–6 кл.) ---------------- */
+  const hasKr = id => /^math[56]$/.test(id || '');
+  const krStats = list => { const n = list.length, g = list.map(r => r.score); return { n, best: n ? Math.max(...g) : null, avg: n ? avg(g) : null, last: n ? list.slice().sort((a, b) => (b.atMs || 0) - (a.atMs || 0))[0] : null }; };
+  function krCard(id, results) {
+    const mine = (results || []).filter(r => r.kind === 'kr');
+    const works = new Set(mine.map(r => r.krN)).size;
+    return `<div class="card lesson-row summary-row units-row kr-row">
+      <span class="ln">📝</span>
+      <div><h3>Контрольні роботи</h3><div class="meta">Теми та варіанти зі збірника · без обмеження часу · з розв’язками${user.role === 'student' ? ` · виконано робіт: ${works}` : ''}</div></div>
+      <div class="lesson-actions">${isStaff() ? `<a class="btn light sm" href="#/teacher/results/kr/${id}">📊 Статистика</a>` : ''}<a class="btn brand sm" href="#/kr/${id}">Відкрити</a></div>
+    </div>`;
+  }
+  function krAttempts(list, withDel) {
+    if (!list.length) return '<p class="muted" style="font-weight:700">Ще немає спроб.</p>';
+    list = list.slice().sort((a, b) => (b.atMs || 0) - (a.atMs || 0));
+    return `<div class="table-wrap"><table class="tbl"><thead><tr><th>Дата</th><th>Робота</th><th class="c">Оцінка</th><th class="c">Правильно</th>${withDel ? '<th></th>' : ''}</tr></thead><tbody>
+      ${list.map(r => `<tr><td>${fmtDate(r.atMs)}</td><td>№ ${r.krN}, варіант ${r.krV}</td><td class="c"><span class="cell ${gradeClass(r.score)}">${r.score}</span></td><td class="c">${r.full ?? '—'} з ${r.total ?? '—'}</td>${withDel ? `<td><button class="btn light sm" data-kdel="${esc(r.id)}" title="Видалити спробу">🗑</button></td>` : ''}</tr>`).join('')}
+    </tbody></table></div>`;
+  }
+  function krMine(id, list) {
+    const st = krStats(list);
+    return `<div class="card pad" style="margin-top:16px"><h3 class="rs-h">📝 Контрольні роботи</h3>
+      <p class="muted" style="font-weight:700">Спроб: ${st.n} · найкраща: ${st.best ?? '—'} · середня: ${st.avg ?? '—'}</p>
+      ${krAttempts(list)}<a class="btn brand sm" style="margin-top:10px" href="#/kr/${id}">До контрольних робіт</a></div>`;
+  }
+  async function renderKr(id, n, v) {
+    const meta = catalogSubject(id);
+    if (!meta || !hasKr(id) || (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) || !canCourse(meta.id)) { location.hash = '#/'; return; }
+    $app.innerHTML = '<div class="loader"><span></span></div>';
+    await loadScript('data/kr.js');
+    const K = (window.KR || {})[id]; if (!K) throw new Error('Контрольні роботи не знайдено');
+    const student = user.role === 'student';
+    const mine = student ? (await Store.myResults()).filter(r => r.course === id && r.kind === 'kr') : [];
+    const crumbsBase = `<a href="#/course/${id}">${esc(meta.name)} · ${meta.cls} клас</a><span>›</span>`;
+    if (n) {
+      const w = K.works.find(x => x.n === +n); const vv = +v || 1;
+      if (!w || !w.v[vv]) { location.hash = '#/kr/' + id; return; }
+      Protect.set(student, false);
+      view = KRTest.run($app, { course: id, work: w, v: vv, student, backHref: '#/kr/' + id,
+        varHref: x => `#/kr/${id}/${w.n}/${x}`,
+        crumbs: `<div class="crumbs">${crumbsBase}<a href="#/kr/${id}">Контрольні роботи</a><span>›</span><span>№ ${w.n}</span></div>`,
+        onSave: r => Store.saveResult(Object.assign({ course: id, cls: user.cls || null, name: user.name }, r)) });
+      return;
+    }
+    const cell = (w, vv) => { const l = mine.filter(r => r.krN === w.n && r.krV === vv); const st = krStats(l);
+      return `<a class="kr-var ${st.best != null ? 'tried' : ''}" href="#/kr/${id}/${w.n}/${vv}"><b>Варіант ${vv}</b>${student ? (st.n ? `<span>спроб: ${st.n}</span><span class="cell ${gradeClass(st.best)}">${st.best}</span>` : '<span>не виконано</span>') : '<span>відкрити →</span>'}</a>`; };
+    const all = krStats(mine);
+    $app.innerHTML = `<div class="crumbs">${crumbsBase}<span>Контрольні роботи</span></div>
+      <div class="course-hero" style="--c:${meta.color}"><div><h1>📝 Контрольні роботи · ${meta.cls} клас</h1><p>${esc(K.book)}</p>
+        ${student ? `<p style="font-size:14px;margin-top:6px">Моїх спроб: ${all.n}${all.best != null ? ` · найкраща оцінка: ${all.best} · середня: ${all.avg}` : ''}</p>` : ''}</div><div class="big-ico">🧮</div></div>
+      <div class="flag-box kr-info">💡 Час не обмежено. Відповіді вписуй у поля: дріб — <b>5/9</b>, мішане число — <b>4 2/7</b>, десятковий — <b>0,7</b>, кілька відповідей — через <b>;</b>. Після перевірки до кожної помилки з’явиться розв’язання. Кожну роботу можна проходити кілька разів.
+        ${isStaff() ? ` <a href="#/teacher/results/kr/${id}"><b>📊 Статистика класу</b></a>` : ''}</div>
+      <div class="kr-list">${K.works.map(w => `<div class="card kr-item"><span class="kr-num">${w.n}</span><div class="kr-it"><h3>Контрольна робота № ${w.n}</h3><p>${esc(w.topic)}</p></div>
+        <div class="kr-vars">${[1, 2].filter(x => w.v[x]).map(x => cell(w, x)).join('')}</div></div>`).join('')}</div>
+      ${student ? `<div class="card pad" style="margin-top:18px"><h3 class="rs-h">📈 Мої спроби</h3>${krAttempts(mine)}</div>` : ''}`;
+  }
+  /* вкладка «Результати → Контрольні (математика)» */
+  async function rsKr(D, box, courseArg) {
+    const subs = D.subs.filter(x => hasKr(x.id));
+    if (!subs.length) { box.innerHTML = `<div class="card empty"><span class="e">📝</span>Контрольні роботи доступні для математики 5–6 класів. Серед ваших предметів таких немає.</div>`; return; }
+    await loadScript('data/kr.js');
+    const cur = subs.find(x => x.id === courseArg) || subs.find(x => x.id === ss.getItem('krSub')) || subs[0];
+    ss.setItem('krSub', cur.id);
+    const K = window.KR[cur.id], works = K.works;
+    const studs = D.students.filter(s => s.cls === cur.cls);
+    const rs = D.krs.filter(r => r.course === cur.id);
+    const rows = studs.map(s => { const l = rs.filter(r => r.uid === s.uid); return { s, l, st: krStats(l) }; });
+    const all = krStats(rs);
+    box.innerHTML = `
+      <div class="toolbar rs-filters"><label>Предмет: <select id="kSub">${subs.map(x => `<option value="${x.id}" ${x.id === cur.id ? 'selected' : ''}>${esc(x.name)} · ${x.cls} клас</option>`).join('')}</select></label>
+        <a class="btn light sm" href="#/kr/${cur.id}">📝 Відкрити контрольні</a><button class="btn light sm" id="kCsv">⬇️ CSV</button></div>
+      <div class="stu-tiles">
+        <div class="card st-big"><span class="st-ico">🧑‍🎓</span><div><b>${rows.filter(r => r.st.n).length} з ${studs.length}</b><span>учнів виконували</span></div></div>
+        <div class="card st-big"><span class="st-ico">🔁</span><div><b>${all.n}</b><span>усього спроб</span></div></div>
+        <div class="card st-big"><span class="st-ico">⭐</span><div><b>${all.avg ?? '—'}</b><span>середня оцінка</span></div></div>
+      </div>
+      <p class="muted" style="font-weight:700;margin:6px 0 10px">У клітинці — найкраща оцінка за роботу (будь-який варіант) і кількість спроб. Натисніть на ім’я учня, щоб побачити всі спроби.</p>
+      <div class="card table-wrap"><table class="tbl kr-grid"><thead><tr><th>Учень</th>${works.map(w => `<th class="c" title="${esc(w.topic)}">№ ${w.n}</th>`).join('')}<th class="c">Середня</th></tr></thead><tbody>
+        ${rows.map(r => `<tr><td><a href="#" data-kview="${r.s.uid}" style="font-weight:800">${esc(r.s.name)}</a></td>${works.map(w => { const l = r.l.filter(x => x.krN === w.n); if (!l.length) return '<td class="c muted">—</td>'; const b = Math.max(...l.map(x => x.score)); return `<td class="c"><span class="cell ${gradeClass(b)}">${b}</span><small class="muted"> ×${l.length}</small></td>`; }).join('')}
+          <td class="c">${(() => { const bs = works.map(w => r.l.filter(x => x.krN === w.n)).filter(l => l.length).map(l => Math.max(...l.map(x => x.score))); return bs.length ? avg(bs) : '—'; })()}</td></tr>`).join('') || `<tr><td colspan="${works.length + 2}" class="muted">У класі немає учнів</td></tr>`}
+      </tbody></table></div>`;
+    box.querySelector('#kSub').onchange = e => { location.hash = '#/teacher/results/kr/' + e.target.value; };
+    box.querySelector('#kCsv').onclick = () => downloadCsv(`kontrolni-${cur.id}.csv`, [['Учень', 'Клас', 'Дата', 'Робота', 'Варіант', 'Оцінка', 'Правильно', 'Завдань']]
+      .concat(rs.map(r => [(D.stuById[r.uid] || {}).name || r.name, cur.cls, fmtDate(r.atMs), r.krN, r.krV, r.score, r.full, r.total])));
+    box.querySelectorAll('[data-kview]').forEach(a => a.onclick = e => {
+      e.preventDefault();
+      const row = rows.find(r => r.s.uid === a.dataset.kview);
+      modal(`<h2>📝 ${esc(row.s.name)}</h2><p class="muted" style="font-weight:700">Спроб: ${row.st.n} · найкраща: ${row.st.best ?? '—'} · середня: ${row.st.avg ?? '—'}</p>${krAttempts(row.l, true)}<div class="m-actions"><button class="btn light" data-close>Закрити</button></div>`, m => {
+        m.querySelectorAll('[data-kdel]').forEach(x => x.onclick = async () => {
+          if (!confirm('Видалити цю спробу?')) return;
+          try { await Store.deleteResult(x.dataset.kdel); D.krs = D.krs.filter(r => r.id !== x.dataset.kdel); m.querySelector('[data-close]').click(); rsKr(D, box, cur.id); toast('Спробу видалено'); }
+          catch (err) { toast('Помилка: ' + err.message); }
+        });
+      }, { wide: true });
+    });
+  }
+
   /* ---------------- мої результати ---------------- */
   /* =====================================================================
      УЧЕНЬ: «Мої предмети» і «Мої результати» — швидкий огляд за предметами.
@@ -777,8 +876,8 @@
     const k = classInfo(user.cls);
     const subs = (k ? visibleSubjects(k) : []).filter(s => s.ready);
     const [allRes, infos] = await Promise.all([Store.myResults(), Promise.all(subs.map(s => testsOf(s.id)))]);
-    const results = allRes.filter(r => r.kind !== 'units'), units = allRes.filter(r => r.kind === 'units');
-    return { k, results, units, items: subs.map((s, i) => {
+    const results = allRes.filter(r => r.kind !== 'units' && r.kind !== 'kr'), units = allRes.filter(r => r.kind === 'units'), krs = allRes.filter(r => r.kind === 'kr');
+    return { k, results, units, krs, items: subs.map((s, i) => {
       const { tests, sections } = infos[i];
       const rs = results.filter(r => r.course === s.id).sort((a, b) => (b.atMs || 0) - (a.atMs || 0));
       const bm = bestMap(rs);
@@ -914,7 +1013,7 @@
           <div class="mt-list">${tstate(x.tests[x.tests.length - 1])}</div></details>
         <details class="card sec-item"><summary><span class="sn">🕒</span><b>Історія спроб</b><span class="sec-meta">${x.rs.length}</span></summary>${myAttempts(x.rs, false)}</details>
       </div>
-      ${hasUnits(x.s.id) ? unitsMine(x.s.id, D.units.filter(r => r.course === x.s.id)) : ''}
+      ${hasUnits(x.s.id) ? unitsMine(x.s.id, D.units.filter(r => r.course === x.s.id)) : ''}${hasKr(x.s.id) ? krMine(x.s.id, D.krs.filter(r => r.course === x.s.id)) : ''}
       <div style="margin-top:14px"><a class="btn light" href="#/course/${x.s.id}">Перейти до предмета →</a></div>`;
   }
   function myAttempts(rs, withSubject) {
@@ -998,7 +1097,7 @@
     function cardsDialog(list, fresh) {
       modal(`<h2>${fresh ? '✅ Облікові записи створено' : 'Картки з логінами'}</h2>
         <p style="margin-bottom:16px">Адреса сайту: <b>${esc(location.origin + location.pathname)}</b></p>
-        <div class="login-cards" id="lcards">${list.map(s => `<div class="lc"><b>${esc(s.name)}</b><span class="muted">${s.cls} клас</span><br>Логін: <code>${esc(s.login)}</code><br>Пароль: <code>${esc(s.password)}</code></div>`).join('')}</div>
+        <div class="login-cards" id="lcards">${list.map(s => `<div class="lc"><div class="lc-txt"><b>${esc(s.name)}</b><span class="muted">${s.cls} клас</span><br>Логін: <code>${esc(s.login)}</code><br>Пароль: <code>${esc(s.password)}</code><small class="lc-site">${esc(C.qrLabel || '')}</small></div>${C.qrImage ? `<img class="lc-qr" src="${esc(new URL(C.qrImage, location.href).href)}" alt="QR-код сайту">` : ''}</div>`).join('')}</div>
         <div class="m-actions"><button class="btn light" id="cCopy">📋 Копіювати</button><button class="btn light" id="cPrint">🖨 Друкувати</button><button class="btn brand" data-close>Готово</button></div>`,
         box => {
           box.querySelector('#cCopy').onclick = () => {
@@ -1007,7 +1106,7 @@
           };
           box.querySelector('#cPrint').onclick = () => {
             const w = window.open('', '_blank');
-            w.document.write(`<html><head><meta charset="utf-8"><title>Логіни</title><style>body{font-family:sans-serif;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px}div{border:1px dashed #999;padding:10px;border-radius:8px;font-size:14px}b{font-size:15px}code{font-size:15px;font-weight:bold}</style></head><body>${box.querySelector('#lcards').innerHTML}<p style="grid-column:1/-1">Сайт: ${esc(location.origin + location.pathname)}</p></body></html>`);
+            w.document.write(`<html><head><meta charset="utf-8"><title>Логіни</title><style>body{font-family:sans-serif;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px}.lc{border:1px dashed #999;padding:10px;border-radius:8px;font-size:14px;display:flex;gap:8px;align-items:center;justify-content:space-between;break-inside:avoid}.lc-txt{line-height:1.5}b{font-size:15px;display:block}code{font-size:15px;font-weight:bold}.lc-qr{width:86px;height:86px;flex:none}.lc-site{display:block;color:#555;font-size:11px}.muted{color:#666}</style></head><body>${box.querySelector('#lcards').innerHTML}<p style="grid-column:1/-1">Сайт: ${esc(location.origin + location.pathname)}</p></body></html>`);
             w.document.close(); w.focus(); w.print();
           };
         }, { wide: true });
@@ -1044,7 +1143,7 @@
     const lists = await Promise.all([Store.listStudents()].concat(subs.map(x => Store.courseResults(x.id).catch(() => []))));
     const students = lists.shift().slice().sort((a, b) => a.name.localeCompare(b.name, 'uk'));
     const allRes = lists.flat().sort((a, b) => (b.atMs || 0) - (a.atMs || 0));
-    const units = allRes.filter(r => r.kind === 'units'), results = allRes.filter(r => r.kind !== 'units');
+    const units = allRes.filter(r => r.kind === 'units'), krs = allRes.filter(r => r.kind === 'kr'), results = allRes.filter(r => r.kind !== 'units' && r.kind !== 'kr');
     const subById = {}; subs.forEach(x => (subById[x.id] = x));
     const stuById = {}; students.forEach(s => (stuById[s.uid] = s));
     /* best[uid][course][testId] = { best, attempts, kind } */
@@ -1055,7 +1154,7 @@
       e.attempts++; e.last = Math.max(e.last, r.atMs || 0);
       if (r.passed && (e.best == null || r.score > e.best)) e.best = r.score;
     });
-    RS = { uid: user.uid, at: Date.now(), subs, subById, students, stuById, results, units, best };
+    RS = { uid: user.uid, at: Date.now(), subs, subById, students, stuById, results, units, krs, best };
     return RS;
   }
   /* показники учня з одного предмета */
@@ -1122,7 +1221,7 @@
 
   async function renderResults(tab, a, b) {
     if (tab && /^\d+$/.test(tab)) { b = a; a = tab; tab = 'journal'; }
-    const TABS = [['overview', '📊 Огляд'], ['all', '📋 Усі результати'], ['journal', '📒 Журнал класу'], ['subjects', '📚 За предметами'], ['classes', '🏫 За класами'], ['students', '🧑‍🎓 За учнями'], ['overdue', '⏰ Нагадування'], ['units', '📏 Одиниці (фізика)']];
+    const TABS = [['overview', '📊 Огляд'], ['all', '📋 Усі результати'], ['journal', '📒 Журнал класу'], ['subjects', '📚 За предметами'], ['classes', '🏫 За класами'], ['students', '🧑‍🎓 За учнями'], ['overdue', '⏰ Нагадування'], ['units', '📏 Одиниці (фізика)'], ['kr', '📝 Контрольні (математика)']];
     if (!TABS.some(t => t[0] === tab)) tab = ss.getItem('rsTab') || 'overview';
     ss.setItem('rsTab', tab);
     const tabsHtml = `<div class="page-head"><div><h1>Результати</h1><p>${isAdmin() ? 'Усі класи й предмети' : 'Ваші класи й предмети'} · загальний список, журнал і статистика</p></div>
@@ -1133,7 +1232,7 @@
     const D = await loadResultsData();
     const refresh = () => { const r = $app.querySelector('#rsRefresh'); if (r) r.onclick = async () => { RS = null; route(); }; };
     if (!D.subs.length) { $app.innerHTML = tabsHtml + `<div class="card empty"><span class="e">📭</span>Немає наповнених предметів${isTeacher() ? ', призначених вам' : ''}.</div>`; refresh(); return; }
-    const body = { overview: rsOverview, all: rsAll, subjects: rsSubjects, classes: rsClasses, students: rsStudents, overdue: rsOverdue, units: rsUnits }[tab];
+    const body = { overview: rsOverview, all: rsAll, subjects: rsSubjects, classes: rsClasses, students: rsStudents, overdue: rsOverdue, units: rsUnits, kr: rsKr }[tab];
     $app.innerHTML = tabsHtml + '<div id="rsBody"></div>';
     refresh();
     body(D, $app.querySelector('#rsBody'), a);

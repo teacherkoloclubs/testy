@@ -34,6 +34,10 @@ window.APP_CONFIG = {
      того, як створили учнів. */
   studentEmailDomain: 'uchni.school',
 
+  /* QR-код сайту на картках з логінами учнів (файл у папці img) */
+  qrImage: 'img/qr-site.png',
+  qrLabel: 'tinyurl.com/anriivka',
+
   /* Правила тестів */
   secondsPerQuestion: 45,      // таймер: секунд на одне питання
   unlockSecondsPerQuestion: 10,// кнопка «Перевірити» активна через N с × питань
