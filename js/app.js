@@ -192,19 +192,34 @@
       });
   }
 
-  /* ---------------- чат учня з вчителем ---------------- */
+  /* ---------------- чат: особисті розмови та групові чати «вчитель — клас» ---------------- */
   let CHAT = { list: [], unsub: null, uid: null, ready: false };
+  const CHAT_TTL = 30 * 864e5;                 /* повідомлення старші за місяць видаляються */
   const chatMine = m => m.from === user.uid;
-  const chatUnreadFor = m => !m.read && (user.role === 'student' ? m.role === 't' : m.role === 's');
+  const chatUnreadFor = m => m.grp
+    ? (m.from !== user.uid && !(m.readBy || []).includes(user.uid))
+    : (!m.read && (user.role === 'student' ? m.role === 't' : m.role === 's'));
+  const chatAlive = m => !m.atMs || m.atMs >= Date.now() - CHAT_TTL;
+  const chatCanDelete = m => isAdmin() || (user.role === 'teacher' && canCourse(m.course));
+  const chatTried = new Set();
+  function chatCleanup() {
+    if (user.role === 'student' || !Store.chatCleanup) return;
+    const old = (CHAT.raw || []).filter(m => !chatAlive(m) && chatCanDelete(m) && !chatTried.has(m.id)).map(m => m.id);
+    if (!old.length) return;
+    old.forEach(id => chatTried.add(id));
+    Store.chatCleanup(old).catch(e => console.warn('chat cleanup', e));
+  }
   function chatStart() {
     if (!Store.chatSubscribe || !user || user.role === 'pending') return;
     if (CHAT.unsub && CHAT.uid === user.uid) return;
     chatStop();
     CHAT.uid = user.uid;
-    CHAT.unsub = Store.chatSubscribe({ uid: user.uid, role: user.role, admin: isAdmin(), subjects: user.subjects || [] }, list => {
+    CHAT.unsub = Store.chatSubscribe({ uid: user.uid, role: user.role, cls: user.cls, admin: isAdmin(), subjects: user.subjects || [] }, list => {
       if (!list) return;
-      CHAT.list = list.sort((a, b) => (a.atMs || 0) - (b.atMs || 0)); CHAT.ready = true;
+      CHAT.raw = list;
+      CHAT.list = list.filter(chatAlive).sort((a, b) => (a.atMs || 0) - (b.atMs || 0)); CHAT.ready = true;
       chatBadge();
+      chatCleanup();
       if (CHAT.onChange) CHAT.onChange();
     });
   }
@@ -222,13 +237,14 @@
     return [...out];
   }
   function autoSubjectSafe(s, g) { try { return typeof autoSubject === 'function' ? autoSubject(s, g) : null; } catch (e) { return null; } }
+  /* розмови: особисті (учень + предмет) і групові (клас + предмет) */
   function chatThreads() {
     const th = {};
     CHAT.list.forEach(m => {
-      const k = m.uid + '|' + m.course;
-      const t = th[k] || (th[k] = { key: k, uid: m.uid, course: m.course, cls: m.cls, studentName: m.studentName, msgs: [], unread: 0 });
+      const grp = !!m.grp, k = grp ? `g|${m.course}|${m.gcls}` : `${m.uid}|${m.course}`;
+      const t = th[k] || (th[k] = { key: k, grp, uid: grp ? null : m.uid, course: m.course, cls: grp ? m.gcls : m.cls, studentName: m.studentName, msgs: [], unread: 0 });
       t.msgs.push(m); if (chatUnreadFor(m)) t.unread++;
-      if (m.studentName) t.studentName = m.studentName;
+      if (!grp && m.studentName) t.studentName = m.studentName;
     });
     return Object.values(th).map(t => Object.assign(t, { last: t.msgs[t.msgs.length - 1] })).sort((a, b) => (b.last.atMs || 0) - (a.last.atMs || 0));
   }
@@ -254,61 +270,90 @@
       ta.focus(); ta.setSelectionRange(p, p); ta.dispatchEvent(new Event('input', { bubbles: true })); };
   }
   const chatText = t => esc(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, '<br>');
+  /* класи й предмети, доступні вчителю для чату */
+  const chatClasses = () => myClasses().map(k => ({ cls: k.cls, subs: (isAdmin() ? k.subjects : visibleSubjects(k)).filter(s => canCourse(s.id)) })).filter(k => k.subs.length);
 
-  async function renderChat(a, b) {
+  async function renderChat(a, b, c) {
     chatStart();
     const student = user.role === 'student';
-    let roster = null; /* для вчителя: учні, щоб почати нову розмову */
+    let roster = null; /* для вчителя: учні (імена, кількість у класі) */
     let filter = '';
+    const grpRoute = a === 'grp';
+    const nameOf = uid => { if (uid === user.uid) return 'ви'; const s = roster && roster.find(x => x.uid === uid); if (s) return s.name; const m = CHAT.list.find(x => x.from === uid && x.name); return m ? m.name : 'учасник'; };
     const draw = () => {
       const threads = chatThreads();
       let items;
       if (student) {
         const k = CATALOG.find(x => +x.cls === +user.cls);
         const subs = k ? visibleSubjects(k) : [];
-        items = subs.map(s => { const t = threads.find(x => x.course === s.id && x.uid === user.uid);
-          return { key: user.uid + '|' + s.id, uid: user.uid, course: s.id, cls: user.cls, icon: s.icon || '📘', title: esc(s.name), sub: t ? (chatMine(t.last) ? 'Ви: ' : '') + t.last.text : (teacherNamesFor(s.id, user.cls).join(', ') || 'Напиши вчителю'), last: t && t.last, unread: t ? t.unread : 0 }; })
-          .sort((x, y) => ((y.last && y.last.atMs) || 0) - ((x.last && x.last.atMs) || 0));
+        const dm = subs.map(s => { const t = threads.find(x => !x.grp && x.course === s.id && x.uid === user.uid);
+          return { key: user.uid + '|' + s.id, uid: user.uid, course: s.id, cls: user.cls, ava: s.icon || '📘', href: `#/chat/${s.id}`, title: esc(s.name), sub: t ? (chatMine(t.last) ? 'Ви: ' : '') + t.last.text : (teacherNamesFor(s.id, user.cls).join(', ') || 'Напиши вчителю'), last: t && t.last, unread: t ? t.unread : 0 }; });
+        const gr = threads.filter(t => t.grp && +t.cls === +user.cls).map(t => { const si = subjInfo(t.course);
+          return { key: t.key, grp: true, course: t.course, cls: t.cls, ava: '👥', href: `#/chat/grp/${t.course}`, title: `${esc(si.name)} <small>чат класу</small>`, sub: `${chatMine(t.last) ? 'Ви' : (t.last.name || '')}: ${t.last.text}`, last: t.last, unread: t.unread }; });
+        items = gr.concat(dm).sort((x, y) => ((y.last && y.last.atMs) || 0) - ((x.last && x.last.atMs) || 0));
       } else {
         items = threads.filter(t => canCourse(t.course)).map(t => { const si = subjInfo(t.course);
-          return { key: t.key, uid: t.uid, course: t.course, cls: t.cls, title: `${t.studentName || 'Учень'} <small>${t.cls} кл.</small>`, sub: `${si.icon} ${si.name} · ${chatMine(t.last) ? (t.last.bc ? '📣 ' : 'Ви: ') : ''}${t.last.text}`, last: t.last, unread: t.unread, name: t.studentName }; });
+          return t.grp
+            ? { key: t.key, grp: true, course: t.course, cls: t.cls, ava: '👥', href: `#/chat/grp/${t.course}/${t.cls}`, title: `${t.cls} клас <small>чат класу</small>`, sub: `${si.icon} ${si.name} · ${chatMine(t.last) ? 'Ви' : (t.last.name || '')}: ${t.last.text}`, last: t.last, unread: t.unread, name: t.cls + ' клас' }
+            : { key: t.key, uid: t.uid, course: t.course, cls: t.cls, ava: esc(initials(t.studentName || '?')), href: `#/chat/${t.course}/${t.uid}`, title: `${t.studentName || 'Учень'} <small>${t.cls} кл.</small>`, sub: `${si.icon} ${si.name} · ${chatMine(t.last) ? 'Ви: ' : ''}${t.last.text}`, last: t.last, unread: t.unread, name: t.studentName }; });
         if (filter) items = items.filter(x => (x.name || '').toLowerCase().includes(filter));
       }
-      const selKey = student ? (a ? user.uid + '|' + a : '') : (a && b ? b + '|' + a : '');
-      const sel = items.find(x => x.key === selKey) || (selKey ? (() => {
-        if (student) return null;
-        const st = roster && roster.find(s => s.uid === b); const si = subjInfo(a);
-        return { key: selKey, uid: b, course: a, cls: st ? st.cls : si.cls, name: st ? st.name : 'Учень', title: `${st ? esc(st.name) : 'Учень'} <small>${st ? st.cls : si.cls} кл.</small>` };
-      })() : null);
-      const msgs = sel ? CHAT.list.filter(m => m.uid === sel.uid && m.course === sel.course) : [];
+      /* обрана розмова */
+      let sel = null;
+      if (grpRoute) {
+        const gcls = student ? +user.cls : +c, key = `g|${b}|${gcls}`;
+        if (b && gcls && (student ? visibleSubjects(CATALOG.find(x => +x.cls === +user.cls) || { subjects: [] }).some(s => s.id === b) : canCourse(b)))
+          sel = items.find(x => x.key === key) || { key, grp: true, course: b, cls: gcls };
+      } else {
+        const selKey = student ? (a ? user.uid + '|' + a : '') : (a && b ? b + '|' + a : '');
+        sel = items.find(x => x.key === selKey) || null;
+        if (!sel && selKey && !student) { const st = roster && roster.find(s => s.uid === b); const si = subjInfo(a);
+          sel = { key: selKey, uid: b, course: a, cls: st ? st.cls : si.cls, name: st ? st.name : 'Учень', title: `${st ? esc(st.name) : 'Учень'} <small>${st ? st.cls : si.cls} кл.</small>` }; }
+      }
+      const msgs = sel ? CHAT.list.filter(m => sel.grp ? (m.grp && m.course === sel.course && +m.gcls === +sel.cls) : (!m.grp && m.uid === sel.uid && m.course === sel.course)) : [];
       const si = sel ? subjInfo(sel.course) : null;
-      const head = sel ? (student ? `<b>${si.icon} ${esc(si.name)}</b><small>${esc(teacherNamesFor(sel.course, user.cls).join(', ') || 'Вчитель предмета')}</small>`
-        : `<b>${sel.title}</b><small>${si.icon} ${esc(si.name)}</small>`) : '';
+      const classSize = sel && sel.grp && roster ? roster.filter(s => +s.cls === +sel.cls).length : null;
+      const head = !sel ? '' : sel.grp
+        ? `<b>👥 ${esc(si.name)} · ${sel.cls} клас</b><small>Груповий чат класу${classSize != null ? ` · ${classSize} ${plural(classSize, 'учень', 'учні', 'учнів')}` : ''}${student ? ` · ${esc(teacherNamesFor(sel.course, user.cls).join(', ') || 'вчитель предмета')}` : ''}</small>`
+        : student ? `<b>${si.icon} ${esc(si.name)}</b><small>Особисто · ${esc(teacherNamesFor(sel.course, user.cls).join(', ') || 'вчитель предмета')}</small>`
+        : `<b>${sel.title}</b><small>${si.icon} ${esc(si.name)} · особисто</small>`;
       let lastDay = '';
+      const ticks = m => {
+        if (!chatMine(m)) return '';
+        if (!m.grp) return m.read ? ' <span class="ch-rd" title="Прочитано">✓✓</span>' : ' <span title="Надіслано">✓</span>';
+        const rb = (m.readBy || []).filter(u => u !== m.from);
+        const names = !student && roster ? rb.map(nameOf).join(', ') : '';
+        return rb.length ? ` <span class="ch-rd" title="${esc(names ? 'Прочитали: ' + names : 'Прочитали: ' + rb.length)}">👁 ${rb.length}</span>` : ' <span title="Ще ніхто не прочитав">✓</span>';
+      };
       const bubbles = msgs.map(m => { const day = m.atMs ? new Date(m.atMs).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' }) : '';
         const sep = day !== lastDay ? `<div class="ch-day">${day}</div>` : ''; lastDay = day;
-        return `${sep}<div class="ch-msg ${chatMine(m) ? 'me' : ''}"><div class="ch-bub">${!chatMine(m) ? `<span class="ch-from">${esc(m.name || '')}</span>` : ''}${m.bc ? `<span class="ch-bc">📣 Повідомлення для всього класу</span>` : ''}${chatText(m.text)}<span class="ch-t">${chatTime(m.atMs)}${chatMine(m) ? (m.read ? ' ✓✓' : ' ✓') : ''}</span></div>${(!student || chatMine(m)) ? `<button class="ch-del" data-del="${m.id}" title="Видалити">×</button>` : ''}</div>`; }).join('');
+        const from = !chatMine(m) ? `<span class="ch-from">${m.role === 't' ? '🧑‍🏫 ' : ''}${esc(m.name || '')}</span>` : '';
+        const tools = (chatMine(m) ? `<button class="ch-act" data-edit="${m.id}" title="Редагувати">✏️</button>` : '') + (chatCanDelete(m) ? `<button class="ch-act" data-del="${m.id}" title="Видалити">🗑</button>` : '');
+        return `${sep}<div class="ch-msg ${chatMine(m) ? 'me' : ''} ${m.role === 't' && m.grp ? 'tch' : ''}"><div class="ch-bub">${from}${m.bc ? `<span class="ch-bc">📣 Повідомлення для всього класу</span>` : ''}${chatText(m.text)}<span class="ch-t">${m.edited ? '<i>ред.</i> ' : ''}${chatTime(m.atMs)}${ticks(m)}</span></div>${tools ? `<span class="ch-tools-m">${tools}</span>` : ''}</div>`; }).join('');
       $app.innerHTML = `
-        <div class="page-head"><h1>💬 Чат</h1><p>${student ? 'Постав запитання вчителю свого предмета. Вчитель відповість, щойно побачить повідомлення.' : 'Повідомлення від учнів ваших предметів. Нову розмову можна почати з будь-яким учнем або написати одразу всьому класу (📣 Класу).'}</p></div>
+        <div class="page-head"><h1>💬 Чат</h1><p>${student ? 'Пиши вчителю особисто або спілкуйся в чаті класу. Повідомлення зберігаються місяць.' : 'Особисті розмови з учнями та групові чати класів. Повідомлення старші за місяць видаляються автоматично.'}</p></div>
         <div class="chat ${sel ? 'has-sel' : ''}">
           <aside class="card ch-list">
-            ${!student ? `<div class="ch-tools"><input class="input" id="chFind" placeholder="🔎 Пошук учня" value="${esc(filter)}"><button class="btn brand sm" id="chNew" title="Написати одному учню">＋ Нова</button><button class="btn light sm" id="chAll" title="Написати всьому класу">📣 Класу</button></div>` : ''}
-            ${items.length ? items.map(x => `<a class="ch-item ${sel && x.key === sel.key ? 'on' : ''}" href="#/chat/${x.course}${student ? '' : '/' + x.uid}">
-              <span class="ch-ava">${student ? x.icon : esc(initials(x.name || '?'))}</span>
+            ${!student ? `<div class="ch-tools"><input class="input" id="chFind" placeholder="🔎 Пошук" value="${esc(filter)}"><button class="btn brand sm" id="chNew" title="Написати одному учню">＋ Учню</button><button class="btn light sm" id="chAll" title="Груповий чат з класом">👥 Класу</button></div>` : ''}
+            ${items.length ? items.map(x => `<a class="ch-item ${sel && x.key === sel.key ? 'on' : ''} ${x.grp ? 'grp' : ''}" href="${x.href}">
+              <span class="ch-ava">${x.ava}</span>
               <span class="ch-meta"><b>${x.title}</b><small>${esc((x.sub || '').slice(0, 70))}</small></span>
               <span class="ch-side">${x.last ? `<small>${chatTime(x.last.atMs)}</small>` : ''}${x.unread ? `<i class="ch-n">${x.unread}</i>` : ''}</span></a>`).join('')
-              : `<div class="empty" style="padding:26px 10px"><span class="e">💬</span>${student ? 'Предметів поки немає' : (CHAT.ready ? 'Розмов поки немає. Натисніть «＋ Нова», щоб написати учню.' : 'Завантаження…')}</div>`}
+              : `<div class="empty" style="padding:26px 10px"><span class="e">💬</span>${student ? 'Предметів поки немає' : (CHAT.ready ? 'Розмов поки немає. «＋ Учню» — особиста розмова, «👥 Класу» — чат з усім класом.' : 'Завантаження…')}</div>`}
           </aside>
           <section class="card ch-pane">
             ${sel ? `<div class="ch-head"><a class="ch-back" href="#/chat" title="До списку">←</a><div>${head}</div></div>
-              <div class="ch-msgs" id="chMsgs">${bubbles || `<div class="ch-empty">${student ? '👋 Напиши перше повідомлення — наприклад, запитай про незрозуміле завдання.' : 'Повідомлень ще немає. Напишіть учню першим.'}</div>`}</div>
-              ${emojiBar('chEmo')}<form class="ch-form" id="chForm"><button class="btn light ch-emo-btn" type="button" id="chEmoBtn" title="Смайлики">😊</button><textarea class="input" id="chText" rows="1" maxlength="2000" placeholder="Повідомлення…" required></textarea><button class="btn brand" type="submit" title="Надіслати">➤</button></form>`
-            : `<div class="ch-empty big"><span>💬</span>${student ? 'Обери предмет ліворуч' : 'Оберіть розмову ліворуч'}</div>`}
+              <div class="ch-msgs" id="chMsgs">${bubbles || `<div class="ch-empty">${sel.grp ? (student ? '👥 Тут спілкується весь клас і вчитель.' : '👥 Напишіть перше повідомлення — його побачить увесь клас.') : (student ? '👋 Напиши перше повідомлення — наприклад, запитай про незрозуміле завдання.' : 'Повідомлень ще немає. Напишіть учню першим.')}</div>`}</div>
+              ${emojiBar('chEmo')}<form class="ch-form" id="chForm"><button class="btn light ch-emo-btn" type="button" id="chEmoBtn" title="Смайлики">😊</button><textarea class="input" id="chText" rows="1" maxlength="2000" placeholder="${sel.grp ? 'Повідомлення для всього класу…' : 'Повідомлення…'}" required></textarea><button class="btn brand" type="submit" title="Надіслати">➤</button></form>`
+            : `<div class="ch-empty big"><span>💬</span>${student ? 'Обери розмову ліворуч' : 'Оберіть розмову ліворуч'}</div>`}
           </section>
         </div>`;
       const box = $app.querySelector('#chMsgs'); if (box) box.scrollTop = box.scrollHeight;
-      const unread = msgs.filter(chatUnreadFor).map(m => m.id);
-      if (unread.length && Store.chatMarkRead) Store.chatMarkRead(unread).catch(e => console.warn(e));
+      /* позначити прочитаним */
+      const unread = msgs.filter(chatUnreadFor);
+      const dmIds = unread.filter(m => !m.grp).map(m => m.id), gIds = unread.filter(m => m.grp).map(m => m.id);
+      if (dmIds.length && Store.chatMarkRead) Store.chatMarkRead(dmIds).catch(e => console.warn(e));
+      if (gIds.length && Store.chatMarkReadGroup) Store.chatMarkReadGroup(gIds, user.uid).catch(e => console.warn(e));
       const f = $app.querySelector('#chForm');
       if (f) {
         const ta = f.querySelector('#chText');
@@ -317,15 +362,29 @@
         f.onsubmit = async e => {
           e.preventDefault(); const text = ta.value.trim(); if (!text) return;
           const btn = f.querySelector('button[type=submit]'); btn.disabled = true; ta.value = ''; const eb = $app.querySelector('#chEmo'); if (eb) eb.hidden = true;
-          try {
-            await Store.chatSend({ uid: sel.uid, cls: +sel.cls, course: sel.course, studentName: student ? user.name : (sel.name || ''), role: student ? 's' : 't', name: user.name, text });
-          } catch (ex) { toast('Не надіслано: ' + ex.message); const n = $app.querySelector('#chText'); if (n) n.value = text; }
+          const msg = sel.grp
+            ? { grp: true, gcls: +sel.cls, cls: +sel.cls, course: sel.course, role: student ? 's' : 't', name: user.name, text }
+            : { uid: sel.uid, cls: +sel.cls, course: sel.course, studentName: student ? user.name : (sel.name || ''), role: student ? 's' : 't', name: user.name, text };
+          try { await Store.chatSend(msg); }
+          catch (ex) { toast('Не надіслано: ' + ex.message); const n = $app.querySelector('#chText'); if (n) n.value = text; }
           const nb2 = $app.querySelector('#chForm button[type=submit]'); if (nb2) nb2.disabled = false;
         };
         if (!('ontouchstart' in window)) ta.focus();
         bindEmoji($app, '#chEmoBtn', '#chEmo', '#chText');
       }
-      $app.querySelectorAll('[data-del]').forEach(x => x.onclick = () => modal(`<h2>Видалити повідомлення?</h2>
+      /* редагування власного повідомлення */
+      $app.querySelectorAll('[data-edit]').forEach(x => x.onclick = () => {
+        const m = CHAT.list.find(y => y.id === x.dataset.edit); if (!m) return;
+        modal(`<h2>✏️ Редагувати повідомлення</h2><textarea class="input" id="eText" rows="4" maxlength="2000">${esc(m.text)}</textarea>
+          <div class="ch-bc-tools"><button class="btn light sm" type="button" id="eEmoBtn">😊 Смайлики</button></div>${emojiBar('eEmo')}
+          <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="eGo">Зберегти</button></div>`, (bx, close) => {
+          bindEmoji(bx, '#eEmoBtn', '#eEmo', '#eText');
+          const t = bx.querySelector('#eText'); t.focus(); t.setSelectionRange(t.value.length, t.value.length);
+          bx.querySelector('#eGo').onclick = async () => { const v = t.value.trim(); if (!v) { t.focus(); return; } if (v === m.text) { close(); return; }
+            try { await Store.chatEdit(m.id, v); close(); } catch (e) { toast('Не збережено: ' + e.message); } };
+        });
+      });
+      $app.querySelectorAll('[data-del]').forEach(x => x.onclick = () => modal(`<h2>Видалити повідомлення?</h2><p class="muted">Повідомлення зникне в усіх учасників розмови.</p>
         <div class="m-actions"><button class="btn light" data-close>Ні</button><button class="btn danger" data-close id="mDel">Видалити</button></div>`,
         bx => bx.querySelector('#mDel').onclick = () => Store.chatDelete(x.dataset.del).catch(e => toast(e.message))));
       const fi = $app.querySelector('#chFind');
@@ -333,9 +392,9 @@
       const nb = $app.querySelector('#chNew');
       if (nb) nb.onclick = async () => {
         if (!roster) roster = await Store.listStudents();
-        const subsBy = {}; myClasses().forEach(k => subsBy[k.cls] = (isAdmin() ? k.subjects : visibleSubjects(k)).filter(s => canCourse(s.id)));
+        const subsBy = {}; chatClasses().forEach(k => subsBy[k.cls] = k.subs);
         const sts = roster.filter(s => (subsBy[s.cls] || []).length).sort((x, y) => x.cls - y.cls || x.name.localeCompare(y.name, 'uk'));
-        modal(`<h2>✉️ Нова розмова</h2>
+        modal(`<h2>✉️ Особиста розмова</h2>
           <div class="field"><label>Учень</label><select class="input" id="nSt">${sts.map(s => `<option value="${s.uid}">${s.cls} кл. · ${esc(s.name)}</option>`).join('')}</select></div>
           <div class="field"><label>Предмет</label><select class="input" id="nSub"></select></div>
           <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" data-close id="nGo">Відкрити</button></div>`, bx => {
@@ -346,40 +405,27 @@
         });
       };
       const ab = $app.querySelector('#chAll');
-      if (ab) ab.onclick = async () => {
-        if (!roster) roster = await Store.listStudents();
-        const ks = myClasses().map(k => ({ cls: k.cls, subs: (isAdmin() ? k.subjects : visibleSubjects(k)).filter(s => canCourse(s.id) && s.ready !== false) })).filter(k => k.subs.length);
+      if (ab) ab.onclick = () => {
+        const ks = chatClasses();
         if (!ks.length) { toast('Немає класів з вашими предметами'); return; }
-        modal(`<h2>📣 Повідомлення всьому класу</h2>
-          <p class="muted" style="margin-bottom:10px">Кожен учень отримає повідомлення у своїй розмові з предмета й зможе відповісти вам особисто.</p>
+        modal(`<h2>👥 Чат з класом</h2>
+          <p class="muted" style="margin-bottom:10px">Груповий чат: повідомлення бачать усі учні класу, учні можуть відповідати в чаті.</p>
           <div class="field"><label>Клас</label><select class="input" id="bCls">${ks.map(k => `<option value="${k.cls}">${k.cls} клас</option>`).join('')}</select></div>
           <div class="field"><label>Предмет</label><select class="input" id="bSub"></select></div>
-          <div class="field"><label>Повідомлення</label><textarea class="input" id="bText" rows="4" maxlength="2000" placeholder="Наприклад: Завтра контрольна робота № 3 — повторіть теми 1–4 📚"></textarea>
-            <div class="ch-bc-tools"><button class="btn light sm" type="button" id="bEmoBtn">😊 Смайлики</button><span class="muted" id="bCnt"></span></div>${emojiBar('bEmo')}</div>
-          <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="bGo">📣 Надіслати</button></div>`, (bx, close) => {
-          const cs = bx.querySelector('#bCls'), su = bx.querySelector('#bSub'), cnt = bx.querySelector('#bCnt'), tx = bx.querySelector('#bText');
-          const studs = () => roster.filter(s => +s.cls === +cs.value);
-          const fill = () => { const k = ks.find(x => +x.cls === +cs.value); su.innerHTML = k.subs.map(x => `<option value="${x.id}">${x.icon || '📘'} ${esc(x.name)}</option>`).join('');
-            const n = studs().length; cnt.textContent = `Отримають: ${n} ${plural(n, 'учень', 'учні', 'учнів')}`; };
+          <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" data-close id="bGo">Відкрити чат</button></div>`, bx => {
+          const cs = bx.querySelector('#bCls'), su = bx.querySelector('#bSub');
+          const fill = () => { const k = ks.find(x => +x.cls === +cs.value); su.innerHTML = k.subs.map(x => `<option value="${x.id}">${x.icon || '📘'} ${esc(x.name)}</option>`).join(''); };
           cs.onchange = fill; fill();
-          bindEmoji(bx, '#bEmoBtn', '#bEmo', '#bText');
-          bx.querySelector('#bGo').onclick = async () => {
-            const text = tx.value.trim(); if (!text) { tx.focus(); return; }
-            const list = studs(); if (!list.length) { toast('У цьому класі немає учнів'); return; }
-            const go = bx.querySelector('#bGo'); go.disabled = true; go.textContent = 'Надсилаємо…';
-            const bc = 'b' + Date.now().toString(36);
-            try {
-              await Store.chatSendMany(list.map(s => ({ uid: s.uid, cls: +s.cls, course: su.value, studentName: s.name, role: 't', name: user.name, text, bc })));
-              close(); toast(`Надіслано ${list.length} ${plural(list.length, 'учню', 'учням', 'учням')} ${cs.value} класу ✔`);
-            } catch (ex) { toast('Не надіслано: ' + ex.message); go.disabled = false; go.textContent = '📣 Надіслати'; }
-          };
+          bx.querySelector('#bGo').onclick = () => { location.hash = `#/chat/grp/${su.value}/${cs.value}`; };
         });
       };
     };
-    if (!student && a && b) { try { roster = await Store.listStudents(); } catch (e) { roster = []; } }
+    if (!student) { try { roster = await Store.listStudents(); } catch (e) { roster = []; } }
     CHAT.onChange = () => { if ((location.hash || '').startsWith('#/chat')) {
       const ta = $app.querySelector('#chText'); const keep = ta ? ta.value : ''; const foc = document.activeElement === ta;
-      draw(); const n = $app.querySelector('#chText'); if (n && keep) { n.value = keep; } if (n && foc) n.focus(); } };
+      const eb = $app.querySelector('#chEmo'); const emoOpen = eb && !eb.hidden;
+      draw(); const n = $app.querySelector('#chText'); if (n && keep) { n.value = keep; } if (n && foc) n.focus();
+      if (emoOpen) { const e2 = $app.querySelector('#chEmo'); if (e2) e2.hidden = false; } } };
     view = { destroy() { CHAT.onChange = null; } };
     draw();
   }
@@ -416,7 +462,7 @@
       if (p[0] === 'kr') return await renderKr(p[1], p[2], p[3]);
       if (p[0] === 'my') return await renderMy(p[1]);
       if (p[0] === 'games') return await renderGames(p[1], p[2], p[3]);
-      if (p[0] === 'chat') return await renderChat(p[1], p[2]);
+      if (p[0] === 'chat') return await renderChat(p[1], p[2], p[3]);
       if (p[0] === 'teacher' && isStaff()) {
         if (p[1] === 'students') return await renderStudents();
         if (p[1] === 'results') return await renderResults(p[2], p[3], p[4]);

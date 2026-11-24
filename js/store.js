@@ -214,36 +214,48 @@
       },
       /* ---- чат учня з вчителем: колекція messages ----
          {uid (учень), cls, course, studentName, from, role 's'|'t', name, text, atMs, read} */
+      /* Чат. Особисті повідомлення (uid — учень) і групові (grp: true, gcls — клас). */
       chatSubscribe(me, cb) {
-        const ok = qs => cb(qs.docs.map(d => Object.assign({ id: d.id }, d.data())), qs);
+        const map = d => Object.assign({ id: d.id }, d.data());
         const err = e => { console.warn('chat', e); cb(null); };
-        if (me.role === 'student') return db.collection('messages').where('uid', '==', me.uid).onSnapshot(ok, err);
-        if (me.admin) return db.collection('messages').orderBy('atMs', 'desc').limit(800).onSnapshot(ok, err);
+        if (me.role === 'student') {
+          let a = null, b = null;
+          const push = () => { if (a && b) cb(a.concat(b)); };
+          const u1 = db.collection('messages').where('uid', '==', me.uid).onSnapshot(qs => { a = qs.docs.map(map); push(); }, err);
+          const u2 = me.cls != null
+            ? db.collection('messages').where('gcls', '==', +me.cls).where('grp', '==', true).onSnapshot(qs => { b = qs.docs.map(map); push(); }, e => { console.warn('chat-group', e); b = []; push(); })
+            : (b = [], () => {});
+          return () => { u1(); u2(); };
+        }
+        const ok = qs => cb(qs.docs.map(map), qs);
+        if (me.admin) return db.collection('messages').orderBy('atMs', 'desc').limit(1500).onSnapshot(ok, err);
         const subs = (me.subjects || []).slice(0, 30);
         if (!subs.length) { cb([]); return () => {}; }
         return db.collection('messages').where('course', 'in', subs).onSnapshot(ok, err);
       },
       async chatSend(m) {
         const u = auth.currentUser; if (!u) throw new Error('Немає входу');
-        m.from = u.uid; m.atMs = Date.now(); m.read = false;
+        m.from = u.uid; m.atMs = Date.now();
+        if (m.grp) m.readBy = [u.uid]; else m.read = false;
         m.at = firebase.firestore.FieldValue.serverTimestamp();
+        /* для автоматичного видалення через місяць (політика TTL у Firestore) */
+        m.expireAt = firebase.firestore.Timestamp.fromMillis(m.atMs + 31 * 864e5);
         await db.collection('messages').add(m);
-      },
-      /* повідомлення всьому класу: окремий запис для кожного учня (так кожен бачить його у своїй розмові) */
-      async chatSendMany(list) {
-        const u = auth.currentUser; if (!u) throw new Error('Немає входу');
-        const now = Date.now();
-        for (let i = 0; i < list.length; i += 400) {
-          const batch = db.batch();
-          list.slice(i, i + 400).forEach(m => batch.set(db.collection('messages').doc(), Object.assign({}, m, { from: u.uid, atMs: now, read: false, at: firebase.firestore.FieldValue.serverTimestamp() })));
-          await batch.commit();
-        }
       },
       async chatMarkRead(ids) {
         const batch = db.batch(); ids.slice(0, 400).forEach(id => batch.update(db.collection('messages').doc(id), { read: true }));
         await batch.commit();
       },
+      async chatMarkReadGroup(ids, uid) {
+        const batch = db.batch(); ids.slice(0, 400).forEach(id => batch.update(db.collection('messages').doc(id), { readBy: firebase.firestore.FieldValue.arrayUnion(uid) }));
+        await batch.commit();
+      },
+      async chatEdit(id, text) { await db.collection('messages').doc(id).update({ text, edited: true, editedMs: Date.now() }); },
       async chatDelete(id) { await db.collection('messages').doc(id).delete(); },
+      /* видалення застарілих повідомлень (старіших за місяць) — виконує вчитель або адміністратор */
+      async chatCleanup(ids) {
+        for (let i = 0; i < ids.length; i += 400) { const batch = db.batch(); ids.slice(i, i + 400).forEach(id => batch.delete(db.collection('messages').doc(id))); await batch.commit(); }
+      },
       /* розклад уроків, імпортований зі «Шкільного розкладу» (без ПІБ учнів) */
       async getSchedule() {
         const d = await db.collection('config').doc('schedule').get();

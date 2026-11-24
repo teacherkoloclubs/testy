@@ -518,3 +518,14 @@ body { background-color: #F7F9FD; }
 .ch-bc-tools { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
 .modal .ch-emo { border: 1px solid var(--line); border-radius: 12px; margin-top: 8px; }
 .ch-tools { flex-wrap: wrap; }
+
+/* ===== Чат: групові чати, редагування, прочитання ===== */
+.ch-tools-m { display: inline-flex; flex-direction: column; gap: 2px; opacity: 0; transition: opacity .15s; }
+.ch-msg:hover .ch-tools-m, .ch-msg:focus-within .ch-tools-m { opacity: 1; }
+.ch-act { border: 0; background: #fff; border-radius: 8px; font-size: 13px; padding: 3px 5px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.ch-act:hover { background: #EEF0FF; }
+@media (hover: none) { .ch-tools-m { opacity: .7; } }
+.ch-t i { font-style: italic; opacity: .85; }
+.ch-rd { font-weight: 800; cursor: help; }
+.ch-msg.tch:not(.me) .ch-bub { background: #FFF8E6; border-color: #F6D78B; }
+.ch-item.grp .ch-ava { background: linear-gradient(135deg, #FDE68A, #FCA5A5); }

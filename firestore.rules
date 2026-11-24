@@ -79,24 +79,51 @@ service cloud.firestore {
     // Учень бачить і пише лише у своїх розмовах і лише з предметів свого класу;
     // вчитель — у розмовах своїх предметів; адміністратор — усі.
     match /messages/{id} {
-      allow read: if isAdmin()
-        || teachesCourse(resource.data.course)
-        || (signedIn() && resource.data.uid == request.auth.uid);
+      // Особисті повідомлення: uid — учень-співрозмовник.
+      // Групові (вчитель — клас): grp == true, gcls — клас, readBy — хто прочитав.
+      function textOk(d) { return d.text is string && d.text.size() > 0 && d.text.size() <= 2000; }
+      function isGroup(d) { return d.get('grp', false) == true; }
+      function staffOf(c) { return isAdmin() || teachesCourse(c); }
+
+      allow read: if staffOf(resource.data.course)
+        || (signedIn() && resource.data.uid == request.auth.uid)
+        || (isStudent() && isGroup(resource.data) && resource.data.gcls == me().cls);
+
       allow create: if request.resource.data.from == request.auth.uid
-        && request.resource.data.text is string
-        && request.resource.data.text.size() > 0
-        && request.resource.data.text.size() <= 2000
-        && request.resource.data.read == false
-        && ((isStudent() && request.resource.data.role == 's'
-              && request.resource.data.uid == request.auth.uid
-              && request.resource.data.cls == me().cls)
-          || ((isAdmin() || teachesCourse(request.resource.data.course)) && request.resource.data.role == 't'));
-      // позначити «прочитано» може лише співрозмовник; змінювати текст не можна
-      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
-        && ((signedIn() && resource.data.uid == request.auth.uid && resource.data.role == 't')
-          || ((isAdmin() || teachesCourse(resource.data.course)) && resource.data.role == 's'));
-      allow delete: if isAdmin() || teachesCourse(resource.data.course)
-        || (signedIn() && resource.data.from == request.auth.uid);
+        && textOk(request.resource.data)
+        && ((!isGroup(request.resource.data)
+              && request.resource.data.read == false
+              && ((isStudent() && request.resource.data.role == 's'
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.cls == me().cls)
+                || (staffOf(request.resource.data.course) && request.resource.data.role == 't')))
+          || (isGroup(request.resource.data)
+              && request.resource.data.readBy == [request.auth.uid]
+              && ((isStudent() && request.resource.data.role == 's'
+                    && request.resource.data.gcls == me().cls
+                    && request.resource.data.cls == me().cls)
+                || (staffOf(request.resource.data.course) && request.resource.data.role == 't'))));
+
+      allow update: if
+        // «прочитано» в особистій розмові ставить лише співрозмовник
+        (!isGroup(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+          && ((signedIn() && resource.data.uid == request.auth.uid && resource.data.role == 't')
+            || (staffOf(resource.data.course) && resource.data.role == 's')))
+        // «прочитано» в груповому чаті: учасник додає себе до readBy
+        || (isGroup(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy'])
+          && request.resource.data.readBy.hasAll(resource.data.readBy)
+          && request.resource.data.readBy.size() == resource.data.readBy.size() + 1
+          && request.resource.data.readBy.hasAll([request.auth.uid])
+          && (staffOf(resource.data.course) || (isStudent() && resource.data.gcls == me().cls)))
+        // редагувати текст може лише автор повідомлення
+        || (signedIn() && resource.data.from == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'edited', 'editedMs'])
+          && textOk(request.resource.data));
+
+      // видаляти повідомлення можуть лише вчитель предмета та адміністратор
+      allow delete: if staffOf(resource.data.course);
     }
   }
 }
