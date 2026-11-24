@@ -420,3 +420,37 @@ body { background-color: #F7F9FD; }
   .ch-del { opacity: .5; }
 }
 .topnav a { white-space: nowrap; }
+
+/* ===== Тест «Префікси та одиниці вимірювання» ===== */
+.u-grid { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 1.6fr); gap: 18px; margin: 18px 0; align-items: start; }
+.u-grid .card, #uMine { padding: 20px 22px; }
+.u-grid h2, #uMine h2 { font-size: 19px; margin-bottom: 12px; }
+.u-rules ul { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-weight: 600; line-height: 1.45; }
+.u-rules .btn { margin-right: 8px; }
+.u-table-wrap { overflow-x: auto; border-radius: 12px; border: 2px solid #F4A261; }
+.u-table { width: 100%; border-collapse: collapse; font-size: 15px; min-width: 520px; }
+.u-table th { background: #FDEBD3; color: #3B2A1A; font-weight: 800; padding: 9px 10px; border: 1px solid #F4A261; font-size: 13.5px; line-height: 1.25; }
+.u-table td { padding: 7px 10px; border: 1px solid #F6C08E; font-weight: 600; }
+.u-table td.c { text-align: center; }
+.u-table td.num { font-variant-numeric: tabular-nums; font-weight: 800; white-space: nowrap; }
+.u-table tbody tr:nth-child(even) td { background: #FFF8F0; }
+.u-hint { font-size: 14px; line-height: 1.5; margin-top: 12px; }
+.u-kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+.u-kpi div { background: var(--soft, #F4F3FF); border-radius: 14px; padding: 12px; text-align: center; }
+.u-kpi b { display: block; font-size: 26px; font-weight: 900; border-radius: 10px; }
+.u-kpi span { font-size: 12.5px; color: var(--muted); font-weight: 700; }
+.u-att { overflow-x: auto; }
+.u-q .q-text { font-size: 18px; }
+.u-in { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.u-in input { flex: 1; min-width: 160px; max-width: 320px; font-size: 20px; font-weight: 800; padding: 12px 14px; border-radius: 14px; border: 2px solid #DAD7F5; font-variant-numeric: tabular-nums; }
+.u-in input:focus { outline: none; border-color: var(--brand, #4F46E5); box-shadow: 0 0 0 4px rgba(79,70,229,.12); }
+.u-unit { font-weight: 900; font-size: 18px; color: var(--ink-2); }
+.u-ans { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 12px; font-size: 16px; align-items: center; }
+.u-mark { font-weight: 900; } .u-mark.ok { color: var(--ok); } .u-mark.bad { color: var(--bad); }
+.u-q.u-ok { border-left: 5px solid var(--ok); } .u-q.u-bad { border-left: 5px solid var(--bad); }
+.u-why { margin-top: 14px; background: #F7F6FF; border-radius: 14px; padding: 14px 16px; line-height: 1.55; }
+.u-why ol { margin: 8px 0 0; padding-left: 22px; display: grid; gap: 4px; }
+.u-tip { margin: 8px 0 0; background: #FFF4DE; border-radius: 10px; padding: 8px 12px; font-weight: 600; }
+.u-weak { display: flex; flex-wrap: wrap; gap: 6px; }
+.units-row .ln { background: #FDEBD3; }
+@media (max-width: 820px) { .u-grid { grid-template-columns: 1fr; } .u-kpi { grid-template-columns: repeat(2, 1fr); } }

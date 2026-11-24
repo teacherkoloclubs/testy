@@ -369,6 +369,7 @@
       if (p[0] === 'course') return await renderCourse(p[1]);
       if (p[0] === 'slides') return await renderSlides(p[1], p[2]);
       if (p[0] === 'test') return await renderTest(p[1], p[2], p[3]);
+      if (p[0] === 'units') return await renderUnits(p[1]);
       if (p[0] === 'my') return await renderMy(p[1]);
       if (p[0] === 'games') return await renderGames(p[1], p[2], p[3]);
       if (p[0] === 'chat') return await renderChat(p[1], p[2]);
@@ -526,6 +527,7 @@
           ${nextT ? `<a class="btn light sm" style="margin-top:12px" href="${nextT.href}">Наступний: ${esc(nextT.short)} →</a>` : '<p style="margin-top:8px">🎉 Усі тести виконано!</p>'}` : `<p style="font-size:14px">${lessons.length} ${plural(lessons.length, 'урок', 'уроки', 'уроків')} · ${course.sections.length} ${plural(course.sections.length, 'розділ', 'розділи', 'розділів')}</p>`}
         </div><div class="big-ico">${meta.icon}</div>
       </div>
+      ${hasUnits(id) ? unitsCard(id, results) : ''}
       ${course.sections.map(s => `
         <section class="section-block">
           <div class="section-head"><span class="sn" style="--sc:${s.color || meta.color}">${s.n}</span><h2>${esc(s.title)}</h2><span class="tag">${s.lessons.length} ${plural(s.lessons.length, 'урок', 'уроки', 'уроків')}</span></div>
@@ -655,6 +657,102 @@
     start();
   }
 
+
+  /* ---------------- тест «Префікси та одиниці вимірювання» (фізика) ---------------- */
+  const hasUnits = id => /^physics/.test(id || '') && !!window.UNITS_TEST;
+  function unitsCard(id, results) {
+    const mine = (results || []).filter(r => r.kind === 'units');
+    const st = UnitsTest.stats(mine.sort((a, b) => (b.atMs || 0) - (a.atMs || 0)));
+    return `<div class="card lesson-row summary-row units-row">
+      <span class="ln">📏</span>
+      <div><h3>${UnitsTest.TITLE}</h3><div class="meta">${UNITS_TEST.count} завдань · ${UNITS_TEST.minutes} хв · можна проходити скільки завгодно разів${user.role === 'student' ? ` · спроб: ${st.n}${st.best != null ? ', найкраща: ' + st.best : ''}` : ''}</div></div>
+      <div class="lesson-actions">${isStaff() ? `<a class="btn light sm" href="#/teacher/results/units/${id}">📊 Статистика</a>` : ''}<a class="btn brand sm" href="#/units/${id}">Відкрити</a>${user.role === 'student' && st.best != null ? `<span class="grade ${gradeClass(st.best)}" title="Найкраща оцінка">${st.best}</span>` : ''}</div>
+    </div>`;
+  }
+  function unitsMine(id, list) {
+    list = list.slice().sort((a, b) => (b.atMs || 0) - (a.atMs || 0));
+    const st = UnitsTest.stats(list);
+    return `<div class="card pad" style="margin-top:16px"><h3 class="rs-h">📏 ${UnitsTest.TITLE}</h3>
+      <p class="muted" style="font-weight:700">Спроб: ${st.n} · найкраща: ${st.best ?? '—'} · середня: ${st.avg ?? '—'}</p>
+      ${UnitsTest.attemptsTable(list)}<a class="btn brand sm" style="margin-top:10px" href="#/units/${id}">Пройти тест</a></div>`;
+  }
+  async function renderUnits(id) {
+    const meta = catalogSubject(id);
+    if (!meta || !hasUnits(id) || (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) || !canCourse(meta.id)) { location.hash = '#/'; return; }
+    const crumbs = `<div class="crumbs"><a href="#/course/${id}">${esc(meta.name)} · ${meta.cls} клас</a><span>›</span><span>Префікси та одиниці</span></div>`;
+    const student = user.role === 'student';
+    const showIntro = () => {
+      if (view) { view.destroy(); view = null; }
+      Protect.set(student, false);
+      window.scrollTo(0, 0);
+      UnitsTest.intro($app, { meta, student, crumbs,
+        statsHref: isStaff() ? `#/teacher/results/units/${id}` : '',
+        myResults: async () => (await Store.myResults()).filter(r => r.course === id && r.kind === 'units'),
+        onStart: start });
+    };
+    const start = () => {
+      if (view) view.destroy();
+      Protect.set(true, student);
+      window.scrollTo(0, 0);
+      view = UnitsTest.run($app, { meta, student, crumbs, backHref: '#/course/' + id,
+        metaSave: { course: id, cls: user.cls || null, name: user.name },
+        onSave: r => student ? Store.saveResult(r) : Promise.resolve(),
+        onIntro: showIntro });
+    };
+    showIntro();
+  }
+  /* вкладка «Результати → Одиниці (фізика)» */
+  function rsUnits(D, box, courseArg) {
+    const subs = D.subs.filter(x => hasUnits(x.id));
+    if (!subs.length) { box.innerHTML = `<div class="card empty"><span class="e">📏</span>Тест доступний для фізики 7–9 класів. Серед ваших предметів фізики немає.</div>`; return; }
+    const cur = subs.find(x => x.id === courseArg) || subs.find(x => x.id === ss.getItem('unitsSub')) || subs[0];
+    ss.setItem('unitsSub', cur.id);
+    const studs = D.students.filter(s => s.cls === cur.cls);
+    const rs = D.units.filter(r => r.course === cur.id);
+    const rows = studs.map(s => { const l = rs.filter(r => r.uid === s.uid); return { s, l, st: UnitsTest.stats(l) }; })
+      .sort((a, b) => (b.st.n ? 1 : 0) - (a.st.n ? 1 : 0) || a.s.name.localeCompare(b.s.name, 'uk'));
+    const all = UnitsTest.stats(rs), active = rows.filter(r => r.st.n).length;
+    const bestAvg = avg(rows.filter(r => r.st.n).map(r => r.st.best));
+    box.innerHTML = `
+      <div class="toolbar rs-filters"><label>Предмет: <select id="uSub">${subs.map(x => `<option value="${x.id}" ${x.id === cur.id ? 'selected' : ''}>${esc(x.name)} · ${x.cls} клас</option>`).join('')}</select></label>
+        <a class="btn light sm" href="#/units/${cur.id}">📏 Відкрити тест</a><button class="btn light sm" id="uCsv">⬇️ CSV</button></div>
+      <div class="stu-tiles">
+        <div class="card st-big"><span class="st-ico">🧑‍🎓</span><div><b>${active} з ${studs.length}</b><span>учнів проходили</span></div></div>
+        <div class="card st-big"><span class="st-ico">🔁</span><div><b>${all.n}</b><span>усього спроб</span></div></div>
+        <div class="card st-big"><span class="st-ico">⭐</span><div><b>${all.avg ?? '—'}</b><span>середня оцінка спроб</span></div></div>
+        <div class="card st-big"><span class="st-ico">🏆</span><div><b>${bestAvg ?? '—'}</b><span>середня з найкращих</span></div></div>
+      </div>
+      <div class="card table-wrap"><table class="tbl"><thead><tr><th>Учень</th><th class="c">Спроб</th><th class="c">Найкраща</th><th class="c">Середня</th><th class="c">Остання</th><th>Дата останньої</th><th></th></tr></thead><tbody>
+        ${rows.map(r => `<tr><td style="font-weight:800">${esc(r.s.name)}</td><td class="c">${r.st.n || '—'}</td>
+          <td class="c">${r.st.best != null ? `<span class="cell ${gradeClass(r.st.best)}">${r.st.best}</span>` : '—'}</td><td class="c">${r.st.avg ?? '—'}</td>
+          <td class="c">${r.st.last ? `<span class="cell ${gradeClass(r.st.last.score)}">${r.st.last.score}</span>` : '—'}</td><td>${r.st.last ? fmtDate(r.st.last.atMs) : '—'}</td>
+          <td>${r.st.n ? `<button class="btn light sm" data-uview="${r.s.uid}">Спроби →</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">У класі немає учнів</td></tr>'}
+      </tbody></table></div>`;
+    box.querySelector('#uSub').onchange = e => { location.hash = '#/teacher/results/units/' + e.target.value; };
+    box.querySelector('#uCsv').onclick = () => downloadCsv(`odynytsi-${cur.id}.csv`, [['Учень', 'Клас', 'Дата', 'Оцінка', 'Правильно', 'Час, с']]
+      .concat(rs.map(r => [(D.stuById[r.uid] || {}).name || r.name, cur.cls, fmtDate(r.atMs), r.score, r.full, r.durationSec])));
+    box.querySelectorAll('[data-uview]').forEach(b => b.onclick = () => {
+      const row = rows.find(r => r.s.uid === b.dataset.uview);
+      const list = row.l.slice().sort((a, c) => (c.atMs || 0) - (a.atMs || 0));
+      modal(`<h2>📏 ${esc(row.s.name)}</h2><p class="muted" style="font-weight:700">Спроб: ${row.st.n} · найкраща: ${row.st.best} · середня: ${row.st.avg}</p>
+        ${UnitsTest.attemptsTable(list, true)}${unitsWeak(list)}<div class="m-actions"><button class="btn light" data-close>Закрити</button></div>`, m => {
+        m.querySelectorAll('[data-udel]').forEach(x => x.onclick = async () => {
+          if (!confirm('Видалити цю спробу?')) return;
+          try { await Store.deleteResult(x.dataset.udel); D.units = D.units.filter(r => r.id !== x.dataset.udel); m.querySelector('[data-close]').click(); rsUnits(D, box, cur.id); toast('Спробу видалено'); }
+          catch (e) { toast('Помилка: ' + e.message); }
+        });
+      }, { wide: true });
+    });
+  }
+  /* які величини учню даються найважче */
+  function unitsWeak(list) {
+    const T = window.UNITS_TEST, c = {};
+    list.forEach(r => (r.items || []).forEach(it => { const q = T.q[it.q]; if (!q) return; const e = c[q.cat] || (c[q.cat] = { n: 0, ok: 0 }); e.n++; if (it.ok) e.ok++; }));
+    const ks = Object.keys(c).sort((a, b) => c[a].ok / c[a].n - c[b].ok / c[b].n);
+    if (!ks.length) return '';
+    return `<h3 class="rs-h" style="margin-top:14px">Успішність за величинами</h3><div class="u-weak">${ks.map(k => `<span class="tag ${c[k].ok / c[k].n < 0.5 ? 'warn' : 'ok'}">${esc(T.cats[k])}: ${c[k].ok}/${c[k].n}</span>`).join('')}</div>`;
+  }
+
   /* ---------------- мої результати ---------------- */
   /* =====================================================================
      УЧЕНЬ: «Мої предмети» і «Мої результати» — швидкий огляд за предметами.
@@ -678,8 +776,9 @@
   async function studentSummary() {
     const k = classInfo(user.cls);
     const subs = (k ? visibleSubjects(k) : []).filter(s => s.ready);
-    const [results, infos] = await Promise.all([Store.myResults(), Promise.all(subs.map(s => testsOf(s.id)))]);
-    return { k, results, items: subs.map((s, i) => {
+    const [allRes, infos] = await Promise.all([Store.myResults(), Promise.all(subs.map(s => testsOf(s.id)))]);
+    const results = allRes.filter(r => r.kind !== 'units'), units = allRes.filter(r => r.kind === 'units');
+    return { k, results, units, items: subs.map((s, i) => {
       const { tests, sections } = infos[i];
       const rs = results.filter(r => r.course === s.id).sort((a, b) => (b.atMs || 0) - (a.atMs || 0));
       const bm = bestMap(rs);
@@ -815,6 +914,7 @@
           <div class="mt-list">${tstate(x.tests[x.tests.length - 1])}</div></details>
         <details class="card sec-item"><summary><span class="sn">🕒</span><b>Історія спроб</b><span class="sec-meta">${x.rs.length}</span></summary>${myAttempts(x.rs, false)}</details>
       </div>
+      ${hasUnits(x.s.id) ? unitsMine(x.s.id, D.units.filter(r => r.course === x.s.id)) : ''}
       <div style="margin-top:14px"><a class="btn light" href="#/course/${x.s.id}">Перейти до предмета →</a></div>`;
   }
   function myAttempts(rs, withSubject) {
@@ -943,7 +1043,8 @@
       subs.push({ id: s.id, cls: k.cls, name: s.name, icon: s.icon || '📘', color: k.color, total: ((window.LESSON_INDEX || {})[s.id] || { l: [] }).l.length })));
     const lists = await Promise.all([Store.listStudents()].concat(subs.map(x => Store.courseResults(x.id).catch(() => []))));
     const students = lists.shift().slice().sort((a, b) => a.name.localeCompare(b.name, 'uk'));
-    const results = lists.flat().sort((a, b) => (b.atMs || 0) - (a.atMs || 0));
+    const allRes = lists.flat().sort((a, b) => (b.atMs || 0) - (a.atMs || 0));
+    const units = allRes.filter(r => r.kind === 'units'), results = allRes.filter(r => r.kind !== 'units');
     const subById = {}; subs.forEach(x => (subById[x.id] = x));
     const stuById = {}; students.forEach(s => (stuById[s.uid] = s));
     /* best[uid][course][testId] = { best, attempts, kind } */
@@ -954,7 +1055,7 @@
       e.attempts++; e.last = Math.max(e.last, r.atMs || 0);
       if (r.passed && (e.best == null || r.score > e.best)) e.best = r.score;
     });
-    RS = { uid: user.uid, at: Date.now(), subs, subById, students, stuById, results, best };
+    RS = { uid: user.uid, at: Date.now(), subs, subById, students, stuById, results, units, best };
     return RS;
   }
   /* показники учня з одного предмета */
@@ -1021,7 +1122,7 @@
 
   async function renderResults(tab, a, b) {
     if (tab && /^\d+$/.test(tab)) { b = a; a = tab; tab = 'journal'; }
-    const TABS = [['overview', '📊 Огляд'], ['all', '📋 Усі результати'], ['journal', '📒 Журнал класу'], ['subjects', '📚 За предметами'], ['classes', '🏫 За класами'], ['students', '🧑‍🎓 За учнями'], ['overdue', '⏰ Нагадування']];
+    const TABS = [['overview', '📊 Огляд'], ['all', '📋 Усі результати'], ['journal', '📒 Журнал класу'], ['subjects', '📚 За предметами'], ['classes', '🏫 За класами'], ['students', '🧑‍🎓 За учнями'], ['overdue', '⏰ Нагадування'], ['units', '📏 Одиниці (фізика)']];
     if (!TABS.some(t => t[0] === tab)) tab = ss.getItem('rsTab') || 'overview';
     ss.setItem('rsTab', tab);
     const tabsHtml = `<div class="page-head"><div><h1>Результати</h1><p>${isAdmin() ? 'Усі класи й предмети' : 'Ваші класи й предмети'} · загальний список, журнал і статистика</p></div>
@@ -1032,7 +1133,7 @@
     const D = await loadResultsData();
     const refresh = () => { const r = $app.querySelector('#rsRefresh'); if (r) r.onclick = async () => { RS = null; route(); }; };
     if (!D.subs.length) { $app.innerHTML = tabsHtml + `<div class="card empty"><span class="e">📭</span>Немає наповнених предметів${isTeacher() ? ', призначених вам' : ''}.</div>`; refresh(); return; }
-    const body = { overview: rsOverview, all: rsAll, subjects: rsSubjects, classes: rsClasses, students: rsStudents, overdue: rsOverdue }[tab];
+    const body = { overview: rsOverview, all: rsAll, subjects: rsSubjects, classes: rsClasses, students: rsStudents, overdue: rsOverdue, units: rsUnits }[tab];
     $app.innerHTML = tabsHtml + '<div id="rsBody"></div>';
     refresh();
     body(D, $app.querySelector('#rsBody'), a);
