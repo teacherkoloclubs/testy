@@ -127,25 +127,25 @@
       const pts = (s.pts || []).map(x => `<li class="an" style="--d:${d++}">${rt(x)}</li>`).join('');
       const note = s.note ? `<div class="t-note an" style="--d:${d++}">💡 ${rt(s.note)}</div>` : '';
       s._n = d;
-      return `<div class="slide t-slide t-tx">${tHead(s, s.label || '📘 Теорія')}<div class="t-row"><div class="t-main">${lead}${pts ? `<ul class="t-pts">${pts}</ul>` : ''}${note}</div>${s.e ? `<div class="t-emoji an" style="--d:1">${esc(s.e)}</div>` : ''}</div>${sayBox(s)}</div>`;
+      return `<div class="slide t-slide t-tx">${tHead(s, s.label || '📘 Теорія')}<div class="t-row"><div class="t-main">${lead}${pts ? `<ul class="t-pts">${pts}</ul>` : ''}${note}</div>${s.e ? `<div class="t-emoji an" style="--d:1">${s.e}</div>` : ''}</div>${sayBox(s)}</div>`;
     },
     tdef(s) { /* термін і визначення */
       let d = 2; const ex = (s.ex || []).map(x => `<span class="an" style="--d:${d++}">${rt(x)}</span>`).join('');
       s._n = d + 1;
       return `<div class="slide t-slide t-def">${tHead(Object.assign({}, s, { h: '' }), s.label || '📌 Запам’ятай')}
-        <div class="t-term an" style="--d:0">${s.e ? `<span class="t-term-e">${esc(s.e)}</span>` : ''}${rt(s.term)}</div>
+        <div class="t-term an" style="--d:0">${s.e ? `<span class="t-term-e">${s.e}</span>` : ''}${rt(s.term)}</div>
         <div class="t-defbox an" style="--d:1">${rt(s.def)}</div>${ex ? `<div class="t-ex"><b class="an" style="--d:2">Приклади:</b>${ex}</div>` : ''}${s.note ? `<div class="t-note an" style="--d:${d}">💡 ${rt(s.note)}</div>` : ''}${sayBox(s)}</div>`;
     },
     tflow(s) { /* процес / ланцюжок */
       const n = (s.items || []).length;
       s._n = n * 2 + 2;
       return `<div class="slide t-slide t-flow ${s.cycle ? 'cyc' : ''}">${tHead(s, s.label || '🔄 Як це відбувається')}${s.lead ? `<p class="t-lead an" style="--d:1">${rt(s.lead)}</p>` : ''}
-        <div class="t-chain" style="--n:${n}">${s.items.map((it, k) => `${k ? `<span class="t-arrow an" style="--d:${k * 2 + 1}"></span>` : ''}<div class="t-node an" style="--d:${k * 2 + 2}"><span class="t-node-e">${esc(it[0])}</span><b>${rt(it[1])}</b>${it[2] ? `<small>${rt(it[2])}</small>` : ''}</div>`).join('')}</div>
+        <div class="t-chain" style="--n:${n}">${s.items.map((it, k) => `${k ? `<span class="t-arrow an" style="--d:${k * 2 + 1}"></span>` : ''}<div class="t-node an" style="--d:${k * 2 + 2}"><span class="t-node-e">${it[0]}</span><b>${rt(it[1])}</b>${it[2] ? `<small>${rt(it[2])}</small>` : ''}</div>`).join('')}</div>
         ${s.note ? `<div class="t-note an" style="--d:${n * 2 + 1}">💡 ${rt(s.note)}</div>` : ''}${sayBox(s)}</div>`;
     },
     tcmp(s) { /* порівняння */
       let d = 1;
-      const cols = s.cols.map((c, k) => { const st = d++; return `<div class="t-col an ${k % 2 ? 'from-r' : 'from-l'}" style="--d:${st}"><div class="t-col-h">${c[1] ? `<span>${esc(c[1])}</span>` : ''}${rt(c[0])}</div><ul>${(c[2] || []).map(x => `<li class="an" style="--d:${d++}">${rt(x)}</li>`).join('')}</ul></div>`; }).join('');
+      const cols = s.cols.map((c, k) => { const st = d++; return `<div class="t-col an ${k % 2 ? 'from-r' : 'from-l'}" style="--d:${st}"><div class="t-col-h">${c[1] ? `<span>${c[1]}</span>` : ''}${rt(c[0])}</div><ul>${(c[2] || []).map(x => `<li class="an" style="--d:${d++}">${rt(x)}</li>`).join('')}</ul></div>`; }).join('');
       s._n = d + 1;
       return `<div class="slide t-slide t-cmp">${tHead(s, s.label || '⚖️ Порівняємо')}<div class="t-cols" style="--n:${s.cols.length}">${cols}</div>${s.note ? `<div class="t-note an" style="--d:${d}">💡 ${rt(s.note)}</div>` : ''}${sayBox(s)}</div>`;
     },
@@ -160,7 +160,7 @@
       return `<div class="slide t-slide t-formula">${tHead(s, s.label || '🧮 Формула')}${s.lead ? `<p class="t-lead an" style="--d:1">${rt(s.lead)}</p>` : ''}<div class="t-f an" style="--d:1">${rt(s.f)}</div><div class="t-fparts">${parts}</div>${s.note ? `<div class="t-note an" style="--d:${d}">💡 ${rt(s.note)}</div>` : ''}${sayBox(s)}</div>`;
     },
     tgrid(s) { /* картки-категорії */
-      let d = 1; const it = (s.items || []).map(x => `<div class="t-card an" style="--d:${d++}"><span class="t-card-e">${esc(x[0])}</span><b>${rt(x[1])}</b>${x[2] ? `<small>${rt(x[2])}</small>` : ''}</div>`).join('');
+      let d = 1; const it = (s.items || []).map(x => `<div class="t-card an" style="--d:${d++}"><span class="t-card-e">${x[0]}</span><b>${rt(x[1])}</b>${x[2] ? `<small>${rt(x[2])}</small>` : ''}</div>`).join('');
       s._n = d + 1;
       return `<div class="slide t-slide t-grid">${tHead(s, s.label || '🗂 Розглянемо')}${s.lead ? `<p class="t-lead an" style="--d:1">${rt(s.lead)}</p>` : ''}<div class="t-cards" style="--n:${Math.min((s.items || []).length, 4)}">${it}</div>${s.note ? `<div class="t-note an" style="--d:${d}">💡 ${rt(s.note)}</div>` : ''}${sayBox(s)}</div>`;
     },
@@ -171,9 +171,9 @@
     },
     tmap(s) { /* карта знань: центр і гілки */
       const n = (s.items || []).length; let d = 2;
-      const it = s.items.map((x, k) => { const a = ((k / n) * 360 - 90) * Math.PI / 180; return `<div class="t-br an" style="--d:${d++};--x:${(Math.cos(a) * 36).toFixed(1)}%;--y:${(Math.sin(a) * 39).toFixed(1)}%"><span>${esc(x[0])}</span><b>${rt(x[1])}</b>${x[2] ? `<small>${rt(x[2])}</small>` : ''}</div>`; }).join('');
+      const it = s.items.map((x, k) => { const a = ((k / n) * 360 - 90) * Math.PI / 180; return `<div class="t-br an" style="--d:${d++};--x:${(Math.cos(a) * 36).toFixed(1)}%;--y:${(Math.sin(a) * 39).toFixed(1)}%"><span>${x[0]}</span><b>${rt(x[1])}</b>${x[2] ? `<small>${rt(x[2])}</small>` : ''}</div>`; }).join('');
       s._n = d + 1;
-      return `<div class="slide t-slide t-map">${tHead(s, s.label || '🧠 Карта знань')}<div class="t-mapbox" style="--n:${n}"><div class="t-center an" style="--d:1">${s.e ? `<span>${esc(s.e)}</span>` : ''}${rt(s.center)}</div>${it}</div>${s.note ? `<div class="t-note an" style="--d:${d}">💡 ${rt(s.note)}</div>` : ''}${sayBox(s)}</div>`;
+      return `<div class="slide t-slide t-map">${tHead(s, s.label || '🧠 Карта знань')}<div class="t-mapbox" style="--n:${n}"><div class="t-center an" style="--d:1">${s.e ? `<span>${s.e}</span>` : ''}${rt(s.center)}</div>${it}</div>${s.note ? `<div class="t-note an" style="--d:${d}">💡 ${rt(s.note)}</div>` : ''}${sayBox(s)}</div>`;
     }
   };
 
