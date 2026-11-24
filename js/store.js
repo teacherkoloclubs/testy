@@ -229,6 +229,16 @@
         m.at = firebase.firestore.FieldValue.serverTimestamp();
         await db.collection('messages').add(m);
       },
+      /* повідомлення всьому класу: окремий запис для кожного учня (так кожен бачить його у своїй розмові) */
+      async chatSendMany(list) {
+        const u = auth.currentUser; if (!u) throw new Error('Немає входу');
+        const now = Date.now();
+        for (let i = 0; i < list.length; i += 400) {
+          const batch = db.batch();
+          list.slice(i, i + 400).forEach(m => batch.set(db.collection('messages').doc(), Object.assign({}, m, { from: u.uid, atMs: now, read: false, at: firebase.firestore.FieldValue.serverTimestamp() })));
+          await batch.commit();
+        }
+      },
       async chatMarkRead(ids) {
         const batch = db.batch(); ids.slice(0, 400).forEach(id => batch.update(db.collection('messages').doc(id), { read: true }));
         await batch.commit();

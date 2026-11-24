@@ -241,6 +241,18 @@
     const same = d.toDateString() === now.toDateString();
     return same ? d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
   };
+  const EMOJI = ['😊', '😀', '😂', '🙂', '😉', '😍', '🤔', '😮', '😢', '😅', '😎', '🥳', '👍', '👎', '👏', '🙌', '🙏', '💪', '👋', '✌️', '👌', '🤝', '❤️', '💙', '💛', '⭐', '🌟', '🔥', '✨', '🎉', '🏆', '🥇', '✅', '❌', '❓', '❗', '⚠️', '📌', '📚', '📖', '✏️', '📝', '💡', '🧠', '⏰', '📅', '🏫', '🎓'];
+  const emojiBar = id => `<div class="ch-emo" id="${id}" hidden>${EMOJI.map(e => `<button type="button" data-emo="${e}">${e}</button>`).join('')}</div>`;
+  /* вставити смайлик у поле в місце курсора */
+  function bindEmoji(root, btnSel, barSel, taSel) {
+    const btn = root.querySelector(btnSel), bar = root.querySelector(barSel), ta = root.querySelector(taSel);
+    if (!btn || !bar || !ta) return;
+    btn.onclick = e => { e.preventDefault(); bar.hidden = !bar.hidden; };
+    bar.onclick = e => { const b = e.target.closest('[data-emo]'); if (!b) return;
+      const s0 = ta.selectionStart ?? ta.value.length, s1 = ta.selectionEnd ?? ta.value.length;
+      ta.value = ta.value.slice(0, s0) + b.dataset.emo + ta.value.slice(s1); const p = s0 + b.dataset.emo.length;
+      ta.focus(); ta.setSelectionRange(p, p); ta.dispatchEvent(new Event('input', { bubbles: true })); };
+  }
   const chatText = t => esc(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, '<br>');
 
   async function renderChat(a, b) {
@@ -259,7 +271,7 @@
           .sort((x, y) => ((y.last && y.last.atMs) || 0) - ((x.last && x.last.atMs) || 0));
       } else {
         items = threads.filter(t => canCourse(t.course)).map(t => { const si = subjInfo(t.course);
-          return { key: t.key, uid: t.uid, course: t.course, cls: t.cls, title: `${t.studentName || 'Учень'} <small>${t.cls} кл.</small>`, sub: `${si.icon} ${si.name} · ${chatMine(t.last) ? 'Ви: ' : ''}${t.last.text}`, last: t.last, unread: t.unread, name: t.studentName }; });
+          return { key: t.key, uid: t.uid, course: t.course, cls: t.cls, title: `${t.studentName || 'Учень'} <small>${t.cls} кл.</small>`, sub: `${si.icon} ${si.name} · ${chatMine(t.last) ? (t.last.bc ? '📣 ' : 'Ви: ') : ''}${t.last.text}`, last: t.last, unread: t.unread, name: t.studentName }; });
         if (filter) items = items.filter(x => (x.name || '').toLowerCase().includes(filter));
       }
       const selKey = student ? (a ? user.uid + '|' + a : '') : (a && b ? b + '|' + a : '');
@@ -275,12 +287,12 @@
       let lastDay = '';
       const bubbles = msgs.map(m => { const day = m.atMs ? new Date(m.atMs).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' }) : '';
         const sep = day !== lastDay ? `<div class="ch-day">${day}</div>` : ''; lastDay = day;
-        return `${sep}<div class="ch-msg ${chatMine(m) ? 'me' : ''}"><div class="ch-bub">${!chatMine(m) ? `<span class="ch-from">${esc(m.name || '')}</span>` : ''}${chatText(m.text)}<span class="ch-t">${chatTime(m.atMs)}${chatMine(m) ? (m.read ? ' ✓✓' : ' ✓') : ''}</span></div>${(!student || chatMine(m)) ? `<button class="ch-del" data-del="${m.id}" title="Видалити">×</button>` : ''}</div>`; }).join('');
+        return `${sep}<div class="ch-msg ${chatMine(m) ? 'me' : ''}"><div class="ch-bub">${!chatMine(m) ? `<span class="ch-from">${esc(m.name || '')}</span>` : ''}${m.bc ? `<span class="ch-bc">📣 Повідомлення для всього класу</span>` : ''}${chatText(m.text)}<span class="ch-t">${chatTime(m.atMs)}${chatMine(m) ? (m.read ? ' ✓✓' : ' ✓') : ''}</span></div>${(!student || chatMine(m)) ? `<button class="ch-del" data-del="${m.id}" title="Видалити">×</button>` : ''}</div>`; }).join('');
       $app.innerHTML = `
-        <div class="page-head"><h1>💬 Чат</h1><p>${student ? 'Постав запитання вчителю свого предмета. Вчитель відповість, щойно побачить повідомлення.' : 'Повідомлення від учнів ваших предметів. Нову розмову можна почати з будь-яким учнем.'}</p></div>
+        <div class="page-head"><h1>💬 Чат</h1><p>${student ? 'Постав запитання вчителю свого предмета. Вчитель відповість, щойно побачить повідомлення.' : 'Повідомлення від учнів ваших предметів. Нову розмову можна почати з будь-яким учнем або написати одразу всьому класу (📣 Класу).'}</p></div>
         <div class="chat ${sel ? 'has-sel' : ''}">
           <aside class="card ch-list">
-            ${!student ? `<div class="ch-tools"><input class="input" id="chFind" placeholder="🔎 Пошук учня" value="${esc(filter)}"><button class="btn brand sm" id="chNew">＋ Нова</button></div>` : ''}
+            ${!student ? `<div class="ch-tools"><input class="input" id="chFind" placeholder="🔎 Пошук учня" value="${esc(filter)}"><button class="btn brand sm" id="chNew" title="Написати одному учню">＋ Нова</button><button class="btn light sm" id="chAll" title="Написати всьому класу">📣 Класу</button></div>` : ''}
             ${items.length ? items.map(x => `<a class="ch-item ${sel && x.key === sel.key ? 'on' : ''}" href="#/chat/${x.course}${student ? '' : '/' + x.uid}">
               <span class="ch-ava">${student ? x.icon : esc(initials(x.name || '?'))}</span>
               <span class="ch-meta"><b>${x.title}</b><small>${esc((x.sub || '').slice(0, 70))}</small></span>
@@ -290,7 +302,7 @@
           <section class="card ch-pane">
             ${sel ? `<div class="ch-head"><a class="ch-back" href="#/chat" title="До списку">←</a><div>${head}</div></div>
               <div class="ch-msgs" id="chMsgs">${bubbles || `<div class="ch-empty">${student ? '👋 Напиши перше повідомлення — наприклад, запитай про незрозуміле завдання.' : 'Повідомлень ще немає. Напишіть учню першим.'}</div>`}</div>
-              <form class="ch-form" id="chForm"><textarea class="input" id="chText" rows="1" maxlength="2000" placeholder="Повідомлення…" required></textarea><button class="btn brand" type="submit" title="Надіслати">➤</button></form>`
+              ${emojiBar('chEmo')}<form class="ch-form" id="chForm"><button class="btn light ch-emo-btn" type="button" id="chEmoBtn" title="Смайлики">😊</button><textarea class="input" id="chText" rows="1" maxlength="2000" placeholder="Повідомлення…" required></textarea><button class="btn brand" type="submit" title="Надіслати">➤</button></form>`
             : `<div class="ch-empty big"><span>💬</span>${student ? 'Обери предмет ліворуч' : 'Оберіть розмову ліворуч'}</div>`}
           </section>
         </div>`;
@@ -304,13 +316,14 @@
         ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; });
         f.onsubmit = async e => {
           e.preventDefault(); const text = ta.value.trim(); if (!text) return;
-          const btn = f.querySelector('button'); btn.disabled = true; ta.value = '';
+          const btn = f.querySelector('button[type=submit]'); btn.disabled = true; ta.value = ''; const eb = $app.querySelector('#chEmo'); if (eb) eb.hidden = true;
           try {
             await Store.chatSend({ uid: sel.uid, cls: +sel.cls, course: sel.course, studentName: student ? user.name : (sel.name || ''), role: student ? 's' : 't', name: user.name, text });
           } catch (ex) { toast('Не надіслано: ' + ex.message); const n = $app.querySelector('#chText'); if (n) n.value = text; }
-          const nb2 = $app.querySelector('#chForm button'); if (nb2) nb2.disabled = false;
+          const nb2 = $app.querySelector('#chForm button[type=submit]'); if (nb2) nb2.disabled = false;
         };
         if (!('ontouchstart' in window)) ta.focus();
+        bindEmoji($app, '#chEmoBtn', '#chEmo', '#chText');
       }
       $app.querySelectorAll('[data-del]').forEach(x => x.onclick = () => modal(`<h2>Видалити повідомлення?</h2>
         <div class="m-actions"><button class="btn light" data-close>Ні</button><button class="btn danger" data-close id="mDel">Видалити</button></div>`,
@@ -330,6 +343,36 @@
           const fill = () => { const s = sts.find(x => x.uid === st.value); su.innerHTML = (s ? subsBy[s.cls] : []).map(x => `<option value="${x.id}">${x.icon || '📘'} ${esc(x.name)}</option>`).join(''); };
           st.onchange = fill; fill();
           bx.querySelector('#nGo').onclick = () => { if (st.value && su.value) location.hash = `#/chat/${su.value}/${st.value}`; };
+        });
+      };
+      const ab = $app.querySelector('#chAll');
+      if (ab) ab.onclick = async () => {
+        if (!roster) roster = await Store.listStudents();
+        const ks = myClasses().map(k => ({ cls: k.cls, subs: (isAdmin() ? k.subjects : visibleSubjects(k)).filter(s => canCourse(s.id) && s.ready !== false) })).filter(k => k.subs.length);
+        if (!ks.length) { toast('Немає класів з вашими предметами'); return; }
+        modal(`<h2>📣 Повідомлення всьому класу</h2>
+          <p class="muted" style="margin-bottom:10px">Кожен учень отримає повідомлення у своїй розмові з предмета й зможе відповісти вам особисто.</p>
+          <div class="field"><label>Клас</label><select class="input" id="bCls">${ks.map(k => `<option value="${k.cls}">${k.cls} клас</option>`).join('')}</select></div>
+          <div class="field"><label>Предмет</label><select class="input" id="bSub"></select></div>
+          <div class="field"><label>Повідомлення</label><textarea class="input" id="bText" rows="4" maxlength="2000" placeholder="Наприклад: Завтра контрольна робота № 3 — повторіть теми 1–4 📚"></textarea>
+            <div class="ch-bc-tools"><button class="btn light sm" type="button" id="bEmoBtn">😊 Смайлики</button><span class="muted" id="bCnt"></span></div>${emojiBar('bEmo')}</div>
+          <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="bGo">📣 Надіслати</button></div>`, (bx, close) => {
+          const cs = bx.querySelector('#bCls'), su = bx.querySelector('#bSub'), cnt = bx.querySelector('#bCnt'), tx = bx.querySelector('#bText');
+          const studs = () => roster.filter(s => +s.cls === +cs.value);
+          const fill = () => { const k = ks.find(x => +x.cls === +cs.value); su.innerHTML = k.subs.map(x => `<option value="${x.id}">${x.icon || '📘'} ${esc(x.name)}</option>`).join('');
+            const n = studs().length; cnt.textContent = `Отримають: ${n} ${plural(n, 'учень', 'учні', 'учнів')}`; };
+          cs.onchange = fill; fill();
+          bindEmoji(bx, '#bEmoBtn', '#bEmo', '#bText');
+          bx.querySelector('#bGo').onclick = async () => {
+            const text = tx.value.trim(); if (!text) { tx.focus(); return; }
+            const list = studs(); if (!list.length) { toast('У цьому класі немає учнів'); return; }
+            const go = bx.querySelector('#bGo'); go.disabled = true; go.textContent = 'Надсилаємо…';
+            const bc = 'b' + Date.now().toString(36);
+            try {
+              await Store.chatSendMany(list.map(s => ({ uid: s.uid, cls: +s.cls, course: su.value, studentName: s.name, role: 't', name: user.name, text, bc })));
+              close(); toast(`Надіслано ${list.length} ${plural(list.length, 'учню', 'учням', 'учням')} ${cs.value} класу ✔`);
+            } catch (ex) { toast('Не надіслано: ' + ex.message); go.disabled = false; go.textContent = '📣 Надіслати'; }
+          };
         });
       };
     };
