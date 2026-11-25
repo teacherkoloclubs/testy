@@ -176,6 +176,19 @@
         batch.delete(db.collection('users').doc(uid));
         await batch.commit();
       },
+      /* ручне зарахування вчителем тесту, який учень виконав раніше (наприклад, на папері) */
+      async saveManualResult(r) {
+        const u = auth.currentUser; if (!u) throw new Error('Немає входу');
+        r.manual = true; r.by = u.uid; r.passed = true;
+        r.at = firebase.firestore.FieldValue.serverTimestamp();
+        r.atMs = r.atMs || Date.now();
+        const id = [r.uid, r.course, r.testId].join('__');
+        const ref = db.collection('results').doc(id);
+        const ex = await ref.get().catch(() => null);
+        if (ex && ex.exists) throw new Error('Цей тест учню вже зараховано. Щоб змінити оцінку, спершу видаліть спробу.');
+        await ref.set(r);
+        return id;
+      },
       async saveResult(r) {
         const u = auth.currentUser; if (!u) throw new Error('Немає входу');
         r.uid = u.uid;
@@ -229,9 +242,13 @@
         }
         const ok = qs => cb(qs.docs.map(map), qs);
         if (me.admin) return db.collection('messages').orderBy('atMs', 'desc').limit(1500).onSnapshot(ok, err);
+        /* вчитель: розмови своїх предметів + листування з адміністратором */
         const subs = (me.subjects || []).slice(0, 30);
-        if (!subs.length) { cb([]); return () => {}; }
-        return db.collection('messages').where('course', 'in', subs).onSnapshot(ok, err);
+        let A = subs.length ? null : [], B = null;
+        const push = () => { if (A && B) cb(A.concat(B)); };
+        const u1 = subs.length ? db.collection('messages').where('course', 'in', subs).onSnapshot(qs => { A = qs.docs.map(map); push(); }, err) : () => {};
+        const u2 = db.collection('messages').where('adm', '==', true).where('tuid', '==', me.uid).onSnapshot(qs => { B = qs.docs.map(map); push(); }, e => { console.warn('chat-adm', e); B = []; push(); });
+        return () => { u1(); u2(); };
       },
       async chatSend(m) {
         const u = auth.currentUser; if (!u) throw new Error('Немає входу');

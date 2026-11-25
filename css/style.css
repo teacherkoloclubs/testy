@@ -339,6 +339,7 @@ body.hidden-content .app { filter: blur(18px); }
 @media (max-width: 640px) {
   .brand-text small, .userchip .who { display: none; }
   .lesson-row { grid-template-columns: 44px 1fr; }
+  .lesson-row:has(> .pnum) { grid-template-columns: 34px 44px 1fr; }
   .lesson-row .ln { width: 44px; height: 44px; font-size: 22px; }
   .lesson-actions { grid-column: 1 / -1; justify-content: flex-start; }
   .course-hero { grid-template-columns: 1fr; }
@@ -777,3 +778,64 @@ h1, h2, h3 { overflow-wrap: break-word; }
 .sp-chosen { padding: 10px; border-top: 2px solid var(--line); font-size: 13px; font-weight: 700; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; background: #FCFCFF; }
 .sp-clear { border: 0; background: none; color: var(--bad); font: inherit; font-weight: 800; cursor: pointer; text-decoration: underline; }
 @media (max-width: 640px) { .sp-head { min-width: 100%; } .sp-body { max-height: 260px; } }
+
+/* номер параграфа ліворуч від значка уроку */
+@media (min-width: 641px) { .lesson-row:has(> .pnum) { grid-template-columns: 40px 54px 1fr auto; } }
+.lesson-row .pnum { font-weight: 900; font-size: 15px; color: var(--brand, #4F46E5); text-align: center; white-space: nowrap; }
+.lesson-row .pnum.blank { visibility: hidden; }
+@media (max-width: 640px) { .lesson-row .pnum { font-size: 13px; } }
+
+/* розклад: фільтри й компактна таблиця вчителів */
+.sched-f { margin: 14px 0 10px; align-items: center; }
+.sched-tch td { padding-top: 6px; padding-bottom: 6px; }
+.sched-tch .st-n { font-weight: 800; white-space: nowrap; }
+.st-chip { display: inline-block; margin: 2px 4px 2px 0; padding: 2px 8px; border-radius: 999px; background: #EEF2FF; font-size: 12.5px; font-weight: 700; color: #334155; white-space: nowrap; }
+.st-chip b { color: #4F46E5; }
+/* модальні форми в два стовпці */
+.m-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+@media (max-width: 560px) { .m-grid2 { grid-template-columns: 1fr; } }
+/* предмети: приховати клас */
+.adm-clshide { display: flex; margin: 4px 14px 8px; font-size: 14px; }
+.adm-class.is-hidden > summary { opacity: .6; }
+/* чат: скріншоти */
+.ch-img { display: block; max-width: min(320px, 100%); max-height: 260px; border-radius: 10px; margin: 4px 0 6px; cursor: zoom-in; object-fit: contain; background: #fff; }
+.ch-pend { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid #E5E7EB; font-size: 13px; font-weight: 700; color: #475569; }
+.ch-pend[hidden] { display: none; }
+.ch-pend img { height: 48px; max-width: 90px; object-fit: cover; border-radius: 8px; border: 1px solid #E5E7EB; }
+.ch-pend span { flex: 1; }
+
+/* довідка */
+.help-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+.help-card h3 { display: flex; gap: 10px; align-items: center; font-size: 1.1em; font-weight: 900; margin-bottom: 8px; }
+.help-card h3 span { font-size: 1.4em; }
+.help-card ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-weight: 600; color: var(--ink-2, #334155); line-height: 1.45; }
+
+/* лабораторні роботи */
+.lab-badge { display: inline-block; font-weight: 900; font-size: 13px; color: #0E7490; background: #E0F7FA; border-radius: 999px; padding: 3px 10px; margin-bottom: 4px; }
+.lab-info { display: grid; grid-template-columns: 1fr 1.4fr; gap: 14px; margin-bottom: 14px; }
+.lab-info h3, .lab-steps h3, .lab-concl h3, .lab-q h3 { font-size: 1.05em; font-weight: 900; margin: 0 0 6px; }
+.lab-info h3 + p { margin-bottom: 10px; }
+.lab-info ul, .lab-steps ol, .lab-q ol { padding-left: 20px; display: grid; gap: 4px; font-weight: 600; line-height: 1.5; }
+.lab-theory p { margin: 0 0 8px; line-height: 1.55; }
+.lab-f { font-size: 1.15em; font-weight: 800; background: #EEF0FF; border-radius: 10px; padding: 8px 12px; margin: 6px 0 10px; text-align: center; font-family: 'Cambria Math', Georgia, serif; }
+.lab-steps { margin-bottom: 16px; }
+.lab-safe { margin-top: 8px; background: #FFF4E5; border-radius: 10px; padding: 8px 12px; font-weight: 700; }
+.lab-table-wrap { padding: 12px; overflow-x: auto; }
+.lab-tbl th { font-size: 13px; } .lab-tbl .lab-calc-h { background: #F0FDF4; }
+.lab-in { width: 92px; text-align: center; font-weight: 800; padding: 6px; }
+.lab-in.ok { border-color: #16A34A; background: #E7F8EF; } .lab-in.bad { border-color: #E5484D; background: #FDECEC; }
+.lab-tbtns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.lab-tres { margin-top: 8px; }
+.lab-concl, .lab-q { margin-top: 14px; }
+.lab-ta { width: 100%; min-height: 96px; font: inherit; }
+.lab-sample { margin-top: 10px; background: #F0FDF4; border-radius: 10px; padding: 10px 12px; font-weight: 600; line-height: 1.5; }
+.lab-row { border-color: #99E1EA; background: linear-gradient(90deg, #ECFEFF, #fff); }
+tr.lab-new td { animation: labNew 1.2s ease; }
+@keyframes labNew { from { background: #FEF9C3; } to { background: transparent; } }
+@media (max-width: 860px) { .lab-info { grid-template-columns: 1fr; } }
+@media print {
+  body.lab-printing #topbar, body.lab-printing .crumbs, body.lab-printing .sim-nav, body.lab-printing .sim-wrap, body.lab-printing .lab-tbtns,
+  body.lab-printing .sim-task-a button, body.lab-printing .sim-tip, body.lab-printing .toast { display: none !important; }
+  body.lab-printing .card { box-shadow: none !important; border: 1px solid #ccc !important; break-inside: avoid; }
+  body.lab-printing .lab-sample[hidden] { display: none !important; }
+}

@@ -71,6 +71,14 @@ service cloud.firestore {
         && request.resource.data.score is int
         && request.resource.data.score >= 0
         && request.resource.data.score <= 12;
+      // ручне зарахування: вчитель свого предмета (або адміністратор) вносить оцінку за учня
+      allow create: if (isAdmin() || teachesCourse(request.resource.data.course))
+        && request.resource.data.manual == true
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.passed == true
+        && request.resource.data.score is int
+        && request.resource.data.score >= 1
+        && request.resource.data.score <= 12;
       allow update: if false;
       allow delete: if isAdmin() || teachesCourse(resource.data.course);
     }
@@ -81,17 +89,28 @@ service cloud.firestore {
     match /messages/{id} {
       // Особисті повідомлення: uid — учень-співрозмовник.
       // Групові (вчитель — клас): grp == true, gcls — клас, readBy — хто прочитав.
-      function textOk(d) { return d.text is string && d.text.size() > 0 && d.text.size() <= 2000; }
+      // текст або скріншот (стиснений JPEG у полі img, до ~700 КБ)
+      function textOk(d) {
+        return d.text is string && d.text.size() <= 2000
+          && (d.text.size() > 0 || (d.get('img', '') is string && d.get('img', '').size() > 0))
+          && (!('img' in d) || (d.img is string && d.img.size() < 720000));
+      }
+      // листування вчителя з адміністратором: adm == true, tuid — вчитель
+      function isAdm(d) { return d.get('adm', false) == true; }
       function isGroup(d) { return d.get('grp', false) == true; }
       function staffOf(c) { return isAdmin() || teachesCourse(c); }
 
-      allow read: if staffOf(resource.data.course)
+      allow read: if (isAdm(resource.data) && (isAdmin() || resource.data.tuid == request.auth.uid))
+        || staffOf(resource.data.course)
         || (signedIn() && resource.data.uid == request.auth.uid)
         || (isStudent() && isGroup(resource.data) && resource.data.gcls == me().cls);
 
       allow create: if request.resource.data.from == request.auth.uid
         && textOk(request.resource.data)
-        && ((!isGroup(request.resource.data)
+        && ((isAdm(request.resource.data) && request.resource.data.read == false
+              && ((isTeacher() && request.resource.data.role == 't' && request.resource.data.tuid == request.auth.uid)
+                || (isAdmin() && request.resource.data.role == 'a')))
+          || (!isAdm(request.resource.data) && !isGroup(request.resource.data)
               && request.resource.data.read == false
               && ((isStudent() && request.resource.data.role == 's'
                     && request.resource.data.uid == request.auth.uid
@@ -105,8 +124,13 @@ service cloud.firestore {
                 || (staffOf(request.resource.data.course) && request.resource.data.role == 't'))));
 
       allow update: if
+        // «прочитано» в листуванні з адміністратором
+        (isAdm(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+          && ((isAdmin() && resource.data.role == 't') || (resource.data.tuid == request.auth.uid && resource.data.role == 'a')))
+        ||
         // «прочитано» в особистій розмові ставить лише співрозмовник
-        (!isGroup(resource.data)
+        (!isAdm(resource.data) && !isGroup(resource.data)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
           && ((signedIn() && resource.data.uid == request.auth.uid && resource.data.role == 't')
             || (staffOf(resource.data.course) && resource.data.role == 's')))
@@ -123,7 +147,8 @@ service cloud.firestore {
           && textOk(request.resource.data));
 
       // видаляти повідомлення можуть лише вчитель предмета та адміністратор
-      allow delete: if staffOf(resource.data.course);
+      allow delete: if staffOf(resource.data.course)
+        || (isAdm(resource.data) && (isAdmin() || resource.data.from == request.auth.uid));
     }
   }
 }

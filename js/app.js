@@ -68,7 +68,7 @@
   function applyCatalog(classes) {
     CATALOG.length = 0;
     classes.slice().sort((a, b) => a.cls - b.cls).forEach(k => CATALOG.push({
-      cls: Number(k.cls), color: classColor(k.cls),
+      cls: Number(k.cls), color: classColor(k.cls), hidden: !!k.hidden,
       subjects: (k.subjects || []).map(s0 => {
         const s = Object.assign({}, s0);
         s.key = s.key || s.id;
@@ -85,7 +85,7 @@
   }
   applyCatalog(BASE_CATALOG);
   function exportCatalog() {
-    return CATALOG.map(k => ({ cls: k.cls, color: k.color, subjects: k.subjects.map(s => ({
+    return CATALOG.map(k => ({ cls: k.cls, color: k.color, hidden: !!k.hidden, subjects: k.subjects.map(s => ({
       key: s.key, name: s.name, icon: s.icon, course: s.course || '', unlinked: !!s.unlinked, hidden: !!s.hidden, archive: s.archive || [] })) }));
   }
   /* ---------- ролі ---------- */
@@ -95,7 +95,11 @@
   /* id курсів (разом з архівними виданнями), доступних вчителю */
   const canCourse = id => !isTeacher() || (user.subjects || []).includes(id);
   const canSubject = s => !isTeacher() || [s.id, s.key, s.course].concat((s.archive || []).map(a => a.course)).some(x => x && user.subjects.includes(x));
-  const visibleSubjects = k => k.subjects.filter(s => !(s.hidden && user && user.role === 'student') && canSubject(s));
+  const visibleSubjects = k => (k.hidden && user && user.role === 'student') ? [] : k.subjects.filter(s => !(s.hidden && user && user.role === 'student') && canSubject(s))
+    .slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'uk'));
+  /* номер параграфа уроку (з індексу уроків) і назва спроби з номером: «§ 5 · Тест: …» */
+  const lessonNo = (course, lid) => { const ix = (window.LESSON_INDEX || {})[course]; const l = ix && ix.l.find(x => x[0] === lid); return l ? l[1] : null; };
+  const resTitle = r => { const n = r.kind === 'lesson' ? lessonNo(r.course, r.testId) : null; return (n != null ? '§ ' + n + ' · ' : '') + (r.title || ''); };
   /* класи, які бачить користувач: адміністратор — усі, вчитель — де є його предмети */
   const myClasses = () => isTeacher() ? CATALOG.filter(k => visibleSubjects(k).length || (user.classes || []).includes(k.cls)) : CATALOG;
   const roleLabel = () => isAdmin() ? 'Адміністратор' : isTeacher() ? 'Вчитель' : user.role === 'pending' ? 'Заявка вчителя' : user.cls + ' клас';
@@ -138,7 +142,7 @@
   function courseTests(course, id) {
     const list = [];
     course.sections.forEach(s => {
-      s.lessons.forEach(l => list.push({ key: l.id, title: l.n + '. ' + l.title, short: 'Урок ' + l.n, emoji: l.emoji || '📘', href: `#/test/${id}/lesson/${l.id}`, slides: `#/slides/${id}/${l.id}` }));
+      s.lessons.forEach(l => list.push({ key: l.id, title: '§ ' + l.n + '. ' + l.title, short: '§ ' + l.n, emoji: l.emoji || '📘', href: `#/test/${id}/lesson/${l.id}`, slides: `#/slides/${id}/${l.id}` }));
       list.push({ key: 'section-' + s.n, title: 'Підсумковий тест за розділ ' + s.n + ' «' + s.title + '»', short: 'Розділ ' + s.n, emoji: '🏁', href: `#/test/${id}/section/${s.n}`, summary: true });
     });
     list.push({ key: 'final', title: 'Річний підсумковий тест', short: 'Річний', emoji: '🏆', href: `#/test/${id}/final`, summary: true });
@@ -155,10 +159,10 @@
     top.hidden = !user;
     if (!user) return;
     const links = isAdmin()
-      ? [['#/', 'Класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/teacher/teachers', 'Вчителі'], ['#/teacher/subjects', 'Предмети'], ['#/teacher/schedule', 'Розклад'], ['#/chat', '💬 Чат']]
-      : isTeacher() ? [['#/', 'Мої класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/chat', '💬 Чат']]
+      ? [['#/', 'Класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/teacher/teachers', 'Вчителі'], ['#/teacher/subjects', 'Предмети'], ['#/teacher/schedule', 'Розклад'], ['#/chat', '💬 Чат'], ['#/help', '❓']]
+      : isTeacher() ? [['#/', 'Мої класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/chat', '💬 Чат'], ['#/help', '❓ Довідка']]
       : user.role === 'pending' ? []
-      : [['#/', 'Мої предмети'], ['#/my', 'Мої результати'], ['#/chat', '💬 Чат']];
+      : [['#/', 'Мої предмети'], ['#/my', 'Мої результати'], ['#/chat', '💬 Чат'], ['#/help', '❓ Довідка']];
     const h = location.hash || '#/';
     document.getElementById('topnav').innerHTML = links.map(([href, t]) =>
       `<a href="${href}" class="${(href === '#/' ? (h === '#/' || h.startsWith('#/class') || h.startsWith('#/course')) : h.startsWith(href)) ? 'active' : ''}">${t}</a>`).join('');
@@ -196,11 +200,11 @@
   let CHAT = { list: [], unsub: null, uid: null, ready: false };
   const CHAT_TTL = 30 * 864e5;                 /* повідомлення старші за місяць видаляються */
   const chatMine = m => m.from === user.uid;
-  const chatUnreadFor = m => m.grp
+  const chatUnreadFor = m => m.adm ? (!m.read && m.from !== user.uid) : m.grp
     ? (m.from !== user.uid && !(m.readBy || []).includes(user.uid))
     : (!m.read && (user.role === 'student' ? m.role === 't' : m.role === 's'));
   const chatAlive = m => !m.atMs || m.atMs >= Date.now() - CHAT_TTL;
-  const chatCanDelete = m => isAdmin() || (user.role === 'teacher' && canCourse(m.course));
+  const chatCanDelete = m => isAdmin() || (m.adm ? m.from === user.uid : (user.role === 'teacher' && canCourse(m.course)));
   const chatTried = new Set();
   function chatCleanup() {
     if (user.role === 'student' || !Store.chatCleanup) return;
@@ -241,8 +245,9 @@
   function chatThreads() {
     const th = {};
     CHAT.list.forEach(m => {
-      const grp = !!m.grp, k = grp ? `g|${m.course}|${m.gcls}` : `${m.uid}|${m.course}`;
-      const t = th[k] || (th[k] = { key: k, grp, uid: grp ? null : m.uid, course: m.course, cls: grp ? m.gcls : m.cls, studentName: m.studentName, msgs: [], unread: 0 });
+      const grp = !!m.grp, k = m.adm ? `a|${m.tuid}` : grp ? `g|${m.course}|${m.gcls}` : `${m.uid}|${m.course}`;
+      const t = th[k] || (th[k] = { key: k, adm: !!m.adm, tuid: m.tuid, tname: m.tname, grp, uid: grp || m.adm ? null : m.uid, course: m.course, cls: grp ? m.gcls : m.cls, studentName: m.studentName, msgs: [], unread: 0 });
+      if (m.adm && m.tname) t.tname = m.tname;
       t.msgs.push(m); if (chatUnreadFor(m)) t.unread++;
       if (!grp && m.studentName) t.studentName = m.studentName;
     });
@@ -269,14 +274,36 @@
       ta.value = ta.value.slice(0, s0) + b.dataset.emo + ta.value.slice(s1); const p = s0 + b.dataset.emo.length;
       ta.focus(); ta.setSelectionRange(p, p); ta.dispatchEvent(new Event('input', { bubbles: true })); };
   }
+  const chatPrev = m => m ? ((m.text || '') || (m.img ? '🖼 Скріншот' : '')) : '';
   const chatText = t => esc(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, '<br>');
   /* класи й предмети, доступні вчителю для чату */
   const chatClasses = () => myClasses().map(k => ({ cls: k.cls, subs: (isAdmin() ? k.subjects : visibleSubjects(k)).filter(s => canCourse(s.id)) })).filter(k => k.subs.length);
 
+  /* стиснути зображення до JPEG ≤ ~500 КБ (документ бази обмежений 1 МБ) */
+  function shrinkImage(file) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file), im = new Image();
+      im.onload = () => { URL.revokeObjectURL(url);
+        let max = 1400, q = 0.8, out = '';
+        for (let i = 0; i < 8; i++) {
+          const k = Math.min(1, max / Math.max(im.width, im.height)), cv = document.createElement('canvas');
+          cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k);
+          const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(im, 0, 0, cv.width, cv.height);
+          out = cv.toDataURL('image/jpeg', q); if (out.length < 680000) return res(out);
+          max = Math.round(max * 0.8); q = Math.max(0.5, q - 0.08);
+        }
+        rej(new Error('Зображення завелике'));
+      };
+      im.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Не вдалося прочитати зображення')); };
+      im.src = url;
+    });
+  }
   async function renderChat(a, b, c) {
     chatStart();
     const student = user.role === 'student';
     let roster = null; /* для вчителя: учні (імена, кількість у класі) */
+    let teachers = null; /* для адміністратора: вчителі */
+    let pendImg = ''; /* скріншот, що чекає надсилання */
     let filter = '';
     const grpRoute = a === 'grp';
     const nameOf = uid => { if (uid === user.uid) return 'ви'; const s = roster && roster.find(x => x.uid === uid); if (s) return s.name; const m = CHAT.list.find(x => x.from === uid && x.name); return m ? m.name : 'учасник'; };
@@ -287,20 +314,30 @@
         const k = CATALOG.find(x => +x.cls === +user.cls);
         const subs = k ? visibleSubjects(k) : [];
         const dm = subs.map(s => { const t = threads.find(x => !x.grp && x.course === s.id && x.uid === user.uid);
-          return { key: user.uid + '|' + s.id, uid: user.uid, course: s.id, cls: user.cls, ava: s.icon || '📘', href: `#/chat/${s.id}`, title: esc(s.name), sub: t ? (chatMine(t.last) ? 'Ви: ' : '') + t.last.text : (teacherNamesFor(s.id, user.cls).join(', ') || 'Напиши вчителю'), last: t && t.last, unread: t ? t.unread : 0 }; });
+          return { key: user.uid + '|' + s.id, uid: user.uid, course: s.id, cls: user.cls, ava: s.icon || '📘', href: `#/chat/${s.id}`, title: esc(s.name), sub: t ? (chatMine(t.last) ? 'Ви: ' : '') + chatPrev(t.last) : (teacherNamesFor(s.id, user.cls).join(', ') || 'Напиши вчителю'), last: t && t.last, unread: t ? t.unread : 0 }; });
         const gr = threads.filter(t => t.grp && +t.cls === +user.cls).map(t => { const si = subjInfo(t.course);
-          return { key: t.key, grp: true, course: t.course, cls: t.cls, ava: '👥', href: `#/chat/grp/${t.course}`, title: `${esc(si.name)} <small>чат класу</small>`, sub: `${chatMine(t.last) ? 'Ви' : (t.last.name || '')}: ${t.last.text}`, last: t.last, unread: t.unread }; });
+          return { key: t.key, grp: true, course: t.course, cls: t.cls, ava: '👥', href: `#/chat/grp/${t.course}`, title: `${esc(si.name)} <small>чат класу</small>`, sub: `${chatMine(t.last) ? 'Ви' : (t.last.name || '')}: ${chatPrev(t.last)}`, last: t.last, unread: t.unread }; });
         items = gr.concat(dm).sort((x, y) => ((y.last && y.last.atMs) || 0) - ((x.last && x.last.atMs) || 0));
       } else {
-        items = threads.filter(t => canCourse(t.course)).map(t => { const si = subjInfo(t.course);
+        const admT = threads.filter(t => t.adm && (isAdmin() || t.tuid === user.uid));
+        const admItems = isAdmin()
+          ? admT.map(t => ({ key: t.key, adm: true, tuid: t.tuid, tname: t.tname, ava: '🧑‍🏫', href: `#/chat/adm/${t.tuid}`, title: `${esc(t.tname || 'Вчитель')} <small>вчитель → адміністратор</small>`, sub: `${chatMine(t.last) ? 'Ви: ' : ''}${chatPrev(t.last)}`, last: t.last, unread: t.unread, name: t.tname }))
+          : [(t => ({ key: 'a|' + user.uid, adm: true, tuid: user.uid, tname: user.name, ava: '🛡', href: '#/chat/adm', title: 'Адміністратор <small>питання, пропозиції</small>', sub: t ? `${chatMine(t.last) ? 'Ви: ' : ''}${chatPrev(t.last)}` : 'Напишіть адміністратору порталу', last: t && t.last, unread: t ? t.unread : 0, name: 'адміністратор' }))(admT[0])];
+        items = threads.filter(t => !t.adm && canCourse(t.course)).map(t => { const si = subjInfo(t.course);
           return t.grp
-            ? { key: t.key, grp: true, course: t.course, cls: t.cls, ava: '👥', href: `#/chat/grp/${t.course}/${t.cls}`, title: `${t.cls} клас <small>чат класу</small>`, sub: `${si.icon} ${si.name} · ${chatMine(t.last) ? 'Ви' : (t.last.name || '')}: ${t.last.text}`, last: t.last, unread: t.unread, name: t.cls + ' клас' }
-            : { key: t.key, uid: t.uid, course: t.course, cls: t.cls, ava: esc(initials(t.studentName || '?')), href: `#/chat/${t.course}/${t.uid}`, title: `${t.studentName || 'Учень'} <small>${t.cls} кл.</small>`, sub: `${si.icon} ${si.name} · ${chatMine(t.last) ? 'Ви: ' : ''}${t.last.text}`, last: t.last, unread: t.unread, name: t.studentName }; });
+            ? { key: t.key, grp: true, course: t.course, cls: t.cls, ava: '👥', href: `#/chat/grp/${t.course}/${t.cls}`, title: `${t.cls} клас <small>чат класу</small>`, sub: `${si.icon} ${si.name} · ${chatMine(t.last) ? 'Ви' : (t.last.name || '')}: ${chatPrev(t.last)}`, last: t.last, unread: t.unread, name: t.cls + ' клас' }
+            : { key: t.key, uid: t.uid, course: t.course, cls: t.cls, ava: esc(initials(t.studentName || '?')), href: `#/chat/${t.course}/${t.uid}`, title: `${t.studentName || 'Учень'} <small>${t.cls} кл.</small>`, sub: `${si.icon} ${si.name} · ${chatMine(t.last) ? 'Ви: ' : ''}${chatPrev(t.last)}`, last: t.last, unread: t.unread, name: t.studentName }; });
+        items = items.concat(isAdmin() ? admItems : []).sort((x, y) => ((y.last && y.last.atMs) || 0) - ((x.last && x.last.atMs) || 0));
+        if (!isAdmin()) items = admItems.concat(items);
         if (filter) items = items.filter(x => (x.name || '').toLowerCase().includes(filter));
       }
       /* обрана розмова */
       let sel = null;
-      if (grpRoute) {
+      if (a === 'adm' && !student) {
+        const tuid = isAdmin() ? b : user.uid, key = 'a|' + tuid;
+        if (tuid) { const tt = teachers && teachers.find(x => x.uid === tuid);
+          sel = items.find(x => x.key === key) || { key, adm: true, tuid, tname: tt ? tt.name : 'Вчитель', title: `${esc(tt ? tt.name : 'Вчитель')} <small>вчитель</small>` }; }
+      } else if (grpRoute) {
         const gcls = student ? +user.cls : +c, key = `g|${b}|${gcls}`;
         if (b && gcls && (student ? visibleSubjects(CATALOG.find(x => +x.cls === +user.cls) || { subjects: [] }).some(s => s.id === b) : canCourse(b)))
           sel = items.find(x => x.key === key) || { key, grp: true, course: b, cls: gcls };
@@ -310,10 +347,12 @@
         if (!sel && selKey && !student) { const st = roster && roster.find(s => s.uid === b); const si = subjInfo(a);
           sel = { key: selKey, uid: b, course: a, cls: st ? st.cls : si.cls, name: st ? st.name : 'Учень', title: `${st ? esc(st.name) : 'Учень'} <small>${st ? st.cls : si.cls} кл.</small>` }; }
       }
-      const msgs = sel ? CHAT.list.filter(m => sel.grp ? (m.grp && m.course === sel.course && +m.gcls === +sel.cls) : (!m.grp && m.uid === sel.uid && m.course === sel.course)) : [];
+      const msgs = sel ? CHAT.list.filter(m => sel.adm ? (m.adm && m.tuid === sel.tuid) : m.adm ? false : sel.grp ? (m.grp && m.course === sel.course && +m.gcls === +sel.cls) : (!m.grp && m.uid === sel.uid && m.course === sel.course)) : [];
       const si = sel ? subjInfo(sel.course) : null;
       const classSize = sel && sel.grp && roster ? roster.filter(s => +s.cls === +sel.cls).length : null;
-      const head = !sel ? '' : sel.grp
+      const head = !sel ? '' : sel.adm
+        ? (isAdmin() ? `<b>🧑‍🏫 ${esc(sel.tname || 'Вчитель')}</b><small>Особисте листування вчителя з адміністратором</small>` : `<b>🛡 Адміністратор порталу</b><small>Питання щодо порталу, предметів, учнів, пропозиції</small>`)
+        : sel.grp
         ? `<b>👥 ${esc(si.name)} · ${sel.cls} клас</b><small>Груповий чат класу${classSize != null ? ` · ${classSize} ${plural(classSize, 'учень', 'учні', 'учнів')}` : ''}${student ? ` · ${esc(teacherNamesFor(sel.course, user.cls).join(', ') || 'вчитель предмета')}` : ''}</small>`
         : student ? `<b>${si.icon} ${esc(si.name)}</b><small>Особисто · ${esc(teacherNamesFor(sel.course, user.cls).join(', ') || 'вчитель предмета')}</small>`
         : `<b>${sel.title}</b><small>${si.icon} ${esc(si.name)} · особисто</small>`;
@@ -327,14 +366,14 @@
       };
       const bubbles = msgs.map(m => { const day = m.atMs ? new Date(m.atMs).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' }) : '';
         const sep = day !== lastDay ? `<div class="ch-day">${day}</div>` : ''; lastDay = day;
-        const from = !chatMine(m) ? `<span class="ch-from">${m.role === 't' ? '🧑‍🏫 ' : ''}${esc(m.name || '')}</span>` : '';
+        const from = !chatMine(m) ? `<span class="ch-from">${m.role === 't' ? '🧑‍🏫 ' : m.role === 'a' ? '🛡 ' : ''}${esc(m.name || '')}</span>` : '';
         const tools = (chatMine(m) ? `<button class="ch-act" data-edit="${m.id}" title="Редагувати">✏️</button>` : '') + (chatCanDelete(m) ? `<button class="ch-act" data-del="${m.id}" title="Видалити">🗑</button>` : '');
-        return `${sep}<div class="ch-msg ${chatMine(m) ? 'me' : ''} ${m.role === 't' && m.grp ? 'tch' : ''}"><div class="ch-bub">${from}${m.bc ? `<span class="ch-bc">📣 Повідомлення для всього класу</span>` : ''}${chatText(m.text)}<span class="ch-t">${m.edited ? '<i>ред.</i> ' : ''}${chatTime(m.atMs)}${ticks(m)}</span></div>${tools ? `<span class="ch-tools-m">${tools}</span>` : ''}</div>`; }).join('');
+        return `${sep}<div class="ch-msg ${chatMine(m) ? 'me' : ''} ${m.role === 't' && m.grp ? 'tch' : ''}"><div class="ch-bub">${from}${m.bc ? `<span class="ch-bc">📣 Повідомлення для всього класу</span>` : ''}${m.img ? `<img class="ch-img" src="${esc(m.img)}" alt="скріншот" data-zoom>` : ''}${chatText(m.text || '')}<span class="ch-t">${m.edited ? '<i>ред.</i> ' : ''}${chatTime(m.atMs)}${ticks(m)}</span></div>${tools ? `<span class="ch-tools-m">${tools}</span>` : ''}</div>`; }).join('');
       $app.innerHTML = `
-        <div class="page-head"><h1>💬 Чат</h1><p>${student ? 'Пиши вчителю особисто або спілкуйся в чаті класу. Повідомлення зберігаються місяць.' : 'Особисті розмови з учнями та групові чати класів. Повідомлення старші за місяць видаляються автоматично.'}</p></div>
+        <div class="page-head"><h1>💬 Чат</h1><p>${student ? 'Пиши вчителю особисто або спілкуйся в чаті класу. Повідомлення зберігаються місяць.' : (isAdmin() ? 'Розмови з учнями, групові чати класів і листування з вчителями.' : 'Особисті розмови з учнями, групові чати класів і зв’язок з адміністратором.') + ' Можна вставляти скріншоти (Ctrl+V або 📎). Повідомлення старші за місяць видаляються автоматично.'}</p></div>
         <div class="chat ${sel ? 'has-sel' : ''}">
           <aside class="card ch-list">
-            ${!student ? `<div class="ch-tools"><input class="input" id="chFind" placeholder="🔎 Пошук" value="${esc(filter)}"><button class="btn brand sm" id="chNew" title="Написати одному учню">＋ Учню</button><button class="btn light sm" id="chAll" title="Груповий чат з класом">👥 Класу</button></div>` : ''}
+            ${!student ? `<div class="ch-tools"><input class="input" id="chFind" placeholder="🔎 Пошук" value="${esc(filter)}"><button class="btn brand sm" id="chNew" title="Написати одному учню">＋ Учню</button><button class="btn light sm" id="chAll" title="Груповий чат з класом">👥 Класу</button>${isAdmin() ? '<button class="btn light sm" id="chTch" title="Особисте повідомлення вчителю">🧑‍🏫 Вчителю</button>' : ''}</div>` : ''}
             ${items.length ? items.map(x => `<a class="ch-item ${sel && x.key === sel.key ? 'on' : ''} ${x.grp ? 'grp' : ''}" href="${x.href}">
               <span class="ch-ava">${x.ava}</span>
               <span class="ch-meta"><b>${x.title}</b><small>${esc((x.sub || '').slice(0, 70))}</small></span>
@@ -343,8 +382,8 @@
           </aside>
           <section class="card ch-pane">
             ${sel ? `<div class="ch-head"><a class="ch-back" href="#/chat" title="До списку">←</a><div>${head}</div></div>
-              <div class="ch-msgs" id="chMsgs">${bubbles || `<div class="ch-empty">${sel.grp ? (student ? '👥 Тут спілкується весь клас і вчитель.' : '👥 Напишіть перше повідомлення — його побачить увесь клас.') : (student ? '👋 Напиши перше повідомлення — наприклад, запитай про незрозуміле завдання.' : 'Повідомлень ще немає. Напишіть учню першим.')}</div>`}</div>
-              ${emojiBar('chEmo')}<form class="ch-form" id="chForm"><button class="btn light ch-emo-btn" type="button" id="chEmoBtn" title="Смайлики">😊</button><textarea class="input" id="chText" rows="1" maxlength="2000" placeholder="${sel.grp ? 'Повідомлення для всього класу…' : 'Повідомлення…'}" required></textarea><button class="btn brand" type="submit" title="Надіслати">➤</button></form>`
+              <div class="ch-msgs" id="chMsgs">${bubbles || `<div class="ch-empty">${sel.adm ? (isAdmin() ? 'Повідомлень ще немає.' : '🛡 Напишіть адміністратору: питання про портал, доступ до предметів, помилки, пропозиції. Можна вставити скріншот (Ctrl+V).') : sel.grp ? (student ? '👥 Тут спілкується весь клас і вчитель.' : '👥 Напишіть перше повідомлення — його побачить увесь клас.') : (student ? '👋 Напиши перше повідомлення — наприклад, запитай про незрозуміле завдання.' : 'Повідомлень ще немає. Напишіть учню першим.')}</div>`}</div>
+              ${emojiBar('chEmo')}<div class="ch-pend" id="chPend" ${pendImg ? '' : 'hidden'}>${pendImg ? `<img src="${pendImg}" alt=""><span>Скріншот буде надіслано разом з повідомленням</span><button type="button" class="icon-btn" id="chPendX" title="Прибрати">✕</button>` : ''}</div><form class="ch-form" id="chForm"><button class="btn light ch-emo-btn" type="button" id="chEmoBtn" title="Смайлики">😊</button><label class="btn light ch-emo-btn" title="Додати скріншот або фото (можна також вставити Ctrl+V)">📎<input type="file" id="chFile" accept="image/*" hidden></label><textarea class="input" id="chText" rows="1" maxlength="2000" placeholder="${sel.grp ? 'Повідомлення для всього класу…' : 'Повідомлення… (Ctrl+V — вставити скріншот)'}"></textarea><button class="btn brand" type="submit" title="Надіслати">➤</button></form>`
             : `<div class="ch-empty big"><span>💬</span>${student ? 'Обери розмову ліворуч' : 'Оберіть розмову ліворуч'}</div>`}
           </section>
         </div>`;
@@ -360,15 +399,28 @@
         ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } });
         ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; });
         f.onsubmit = async e => {
-          e.preventDefault(); const text = ta.value.trim(); if (!text) return;
+          e.preventDefault(); const text = ta.value.trim(), img = pendImg; if (!text && !img) return;
           const btn = f.querySelector('button[type=submit]'); btn.disabled = true; ta.value = ''; const eb = $app.querySelector('#chEmo'); if (eb) eb.hidden = true;
-          const msg = sel.grp
+          pendImg = ''; const pe = $app.querySelector('#chPend'); if (pe) { pe.hidden = true; pe.innerHTML = ''; }
+          const msg = sel.adm
+            ? { adm: true, tuid: sel.tuid, tname: isAdmin() ? (sel.tname || '') : user.name, course: '', role: isAdmin() ? 'a' : 't', name: user.name, text }
+            : sel.grp
             ? { grp: true, gcls: +sel.cls, cls: +sel.cls, course: sel.course, role: student ? 's' : 't', name: user.name, text }
             : { uid: sel.uid, cls: +sel.cls, course: sel.course, studentName: student ? user.name : (sel.name || ''), role: student ? 's' : 't', name: user.name, text };
+          if (img) msg.img = img;
           try { await Store.chatSend(msg); }
-          catch (ex) { toast('Не надіслано: ' + ex.message); const n = $app.querySelector('#chText'); if (n) n.value = text; }
+          catch (ex) { toast('Не надіслано: ' + ex.message); const n = $app.querySelector('#chText'); if (n) n.value = text; if (img) { pendImg = img; showPend(); } }
           const nb2 = $app.querySelector('#chForm button[type=submit]'); if (nb2) nb2.disabled = false;
         };
+        const showPend = () => { const pe = $app.querySelector('#chPend'); if (!pe) return;
+          pe.hidden = !pendImg; pe.innerHTML = pendImg ? `<img src="${pendImg}" alt=""><span>Скріншот буде надіслано разом з повідомленням</span><button type="button" class="icon-btn" id="chPendX" title="Прибрати">✕</button>` : '';
+          const x = pe.querySelector('#chPendX'); if (x) x.onclick = () => { pendImg = ''; showPend(); }; };
+        const takeImg = async file => { if (!file || !/^image\//.test(file.type)) return;
+          try { pendImg = await shrinkImage(file); showPend(); ta.focus(); } catch (er) { toast(er.message); } };
+        showPend();
+        ta.addEventListener('paste', e => { const it = [...((e.clipboardData && e.clipboardData.items) || [])].find(x => x.kind === 'file' && /^image\//.test(x.type));
+          if (it) { e.preventDefault(); takeImg(it.getAsFile()); } });
+        const fl = f.querySelector('#chFile'); if (fl) fl.onchange = () => { takeImg(fl.files[0]); fl.value = ''; };
         if (!('ontouchstart' in window)) ta.focus();
         bindEmoji($app, '#chEmoBtn', '#chEmo', '#chText');
       }
@@ -387,6 +439,15 @@
       $app.querySelectorAll('[data-del]').forEach(x => x.onclick = () => modal(`<h2>Видалити повідомлення?</h2><p class="muted">Повідомлення зникне в усіх учасників розмови.</p>
         <div class="m-actions"><button class="btn light" data-close>Ні</button><button class="btn danger" data-close id="mDel">Видалити</button></div>`,
         bx => bx.querySelector('#mDel').onclick = () => Store.chatDelete(x.dataset.del).catch(e => toast(e.message))));
+      $app.querySelectorAll('[data-zoom]').forEach(im => im.onclick = () => modal(`<img src="${esc(im.src)}" alt="" style="max-width:100%;border-radius:12px;display:block;margin:0 auto"><div class="m-actions"><a class="btn light" href="${esc(im.src)}" download="skrinshot.jpg">⬇️ Завантажити</a><button class="btn brand" data-close>Закрити</button></div>`, null, { wide: true }));
+      const tb = $app.querySelector('#chTch');
+      if (tb) tb.onclick = async () => {
+        if (!teachers) { try { teachers = (await Store.listTeachers()).filter(t => !t.pending); } catch (e) { teachers = []; } }
+        if (!teachers.length) { toast('Вчителів ще немає'); return; }
+        modal(`<h2>🧑‍🏫 Написати вчителю</h2><div class="field"><label>Вчитель</label><select class="input" id="tSel">${teachers.slice().sort((x, y) => (x.name || '').localeCompare(y.name || '', 'uk')).map(t => `<option value="${t.uid}">${esc(t.name || t.email)}</option>`).join('')}</select></div>
+          <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" data-close id="tGo">Відкрити</button></div>`,
+          bx => bx.querySelector('#tGo').onclick = () => { location.hash = '#/chat/adm/' + bx.querySelector('#tSel').value; });
+      };
       const fi = $app.querySelector('#chFind');
       if (fi) fi.oninput = () => { filter = fi.value.trim().toLowerCase(); const pos = fi.selectionStart; draw(); const n = $app.querySelector('#chFind'); n.focus(); n.setSelectionRange(pos, pos); };
       const nb = $app.querySelector('#chNew');
@@ -421,6 +482,7 @@
       };
     };
     if (!student) { try { roster = await Store.listStudents(); } catch (e) { roster = []; } }
+    if (isAdmin() && a === 'adm' && b) { try { teachers = (await Store.listTeachers()).filter(t => !t.pending); } catch (e) { teachers = []; } }
     CHAT.onChange = () => { if ((location.hash || '').startsWith('#/chat')) {
       const ta = $app.querySelector('#chText'); const keep = ta ? ta.value : ''; const foc = document.activeElement === ta;
       const eb = $app.querySelector('#chEmo'); const emoOpen = eb && !eb.hidden;
@@ -428,6 +490,42 @@
       if (emoOpen) { const e2 = $app.querySelector('#chEmo'); if (e2) e2.hidden = false; } } };
     view = { destroy() { CHAT.onChange = null; } };
     draw();
+  }
+
+  /* ---------------- довідка: короткі пояснення функцій ---------------- */
+  function renderHelp(tab) {
+    const roleTab = isStaff() ? 'teacher' : 'student';
+    tab = tab === 'teacher' && isStaff() ? 'teacher' : tab === 'student' ? 'student' : roleTab;
+    const card = (ico, title, items) => `<div class="card pad help-card"><h3><span>${ico}</span>${title}</h3><ul>${items.map(x => `<li>${x}</li>`).join('')}</ul></div>`;
+    const student = [
+      card('📚', 'Мої предмети', ['Обери предмет — побачиш розділи й параграфи. Номер <b>§</b> ліворуч допомагає знайти потрібний параграф, як у підручнику.',
+        '<b>🎞 Презентація</b> — теорія параграфа зі схемами, прикладами й запитаннями для самоперевірки. Гортай стрілками або свайпом.',
+        '<b>🏠 Д/з</b> — творче домашнє завдання до параграфа.', '<b>🎮 Ігри</b> — повторення теми в ігровій формі (не впливає на оцінку).']),
+      card('📝', 'Тести', ['Тест за параграф — 12 питань, на кожне є час. Відповідай уважно: вийти з вікна тесту — погана ідея, вчитель це бачить.',
+        `Тест зараховується від <b>${C.passScore}</b> балів. Зарахований тест закривається 🔒 — повторно його пройти не можна (лише якщо вчитель дозволить).`,
+        '<b>🏁 Підсумковий за розділ</b> і <b>🏆 річний</b> — збирають питання з усіх параграфів.', 'Позначка <b>✍️</b> у результатах — оцінку вніс учитель (наприклад, за роботу на уроці).']),
+      card('🧪', 'Симуляції та лабораторні', ['<b>Симуляції</b> — інтерактивні моделі до розділів: змінюй параметри й спостерігай.',
+        '<b>🔬 Лабораторні роботи</b> (фізика 7–9) — віртуальні досліди за підручником: проводиш вимірювання, заповнюєш таблицю, робиш висновок. Результат можна показати вчителю.']),
+      card('📊', 'Мої результати', ['Оцінки з усіх предметів, середній бал і прогрес.', 'Список «Що пройти» нагадує про тести за уроки, що вже минули за розкладом ⏰.']),
+      card('💬', 'Чат', ['Пиши вчителю особисто, якщо щось незрозуміло, або спілкуйся в чаті класу.',
+        'Можна додати <b>скріншот</b>: кнопка 📎 або вставка <b>Ctrl+V</b>. Повідомлення зберігаються місяць.', 'Будь ввічливим — чат бачить учитель.'])
+    ];
+    const teacher = [
+      card('🏫', 'Класи й предмети', ['Предмети в кожному класі впорядковано за алфавітом. Біля кожного уроку — номер параграфа <b>§</b>.',
+        '<b>📋 План</b> — план уроку для вчителя: мета, чек-лист етапів із хронометражем, посилання на презентацію, симуляцію й тест, творче д/з.',
+        '<b>🔬 Лабораторні роботи</b> з фізики — на сторінці курсу; їх можна демонструвати на уроці або давати учням.']),
+      card('📊', 'Результати', ['<b>Огляд</b> — активність, рівні досягнень, учні, що потребують уваги, найскладніші тести.',
+        '<b>Усі результати</b> — фільтри за класом (список предметів підлаштовується під клас), видом тесту, періодом. ✕ — видалити спробу, щоб учень міг пройти тест ще раз.',
+        '<b>За предметами</b> — оберіть предмет у списку: статистика за параграфами й рейтинг учнів. <b>За класами</b> — один клас або всі.',
+        '<b>✍️ Зарахувати вручну</b> — внести оцінку за тест, який учень уже виконав раніше (на папері, на уроці). Тест стане для учня зарахованим.', '<b>Журнал</b> — таблиця оцінок класу; експорт у CSV (Excel).']),
+      card('🧑‍🎓', 'Учні', ['Створення облікових записів, друк карток з логінами й паролями, переведення в наступний клас.', 'Учень входить за логіном — пошта не потрібна.']),
+      card('💬', 'Чат', ['Особисті розмови з учнями та групові чати класу.', '<b>🛡 Адміністратор</b> — окрема розмова з адміністратором порталу: питання про доступ, предмети, помилки.',
+        'Скріншоти — кнопкою 📎 або <b>Ctrl+V</b> у полі повідомлення.']),
+    ].concat(isAdmin() ? [card('⚙️', 'Лише для адміністратора', ['<b>Вчителі</b> — заявки, призначення предметів і класів. <b>Предмети</b> — назви, порядок, прив’язка матеріалів; можна приховати від учнів окремий предмет або весь клас.',
+      '<b>Розклад</b> — завантаження файлу «Шкільного розкладу»; фільтри за класом, предметом і вчителем; синхронізація предметів учителів.', '<b>💬 Чат → 🧑‍🏫 Вчителю</b> — написати будь-якому вчителю.'])] : []);
+    $app.innerHTML = `<div class="page-head"><div><h1>❓ Довідка</h1><p>Коротко про можливості порталу</p></div></div>
+      ${isStaff() ? `<nav class="rs-tabs"><a href="#/help/teacher" class="${tab === 'teacher' ? 'on' : ''}">🧑‍🏫 Для вчителя</a><a href="#/help/student" class="${tab === 'student' ? 'on' : ''}">🧑‍🎓 Для учня</a></nav>` : ''}
+      <div class="help-grid">${(tab === 'teacher' ? teacher : student).join('')}</div>`;
   }
 
   /* ---------------- маршрутизатор ---------------- */
@@ -466,6 +564,8 @@
       if (p[0] === 'my') return await renderMy(p[1]);
       if (p[0] === 'games') return await renderGames(p[1], p[2], p[3]);
       if (p[0] === 'chat') return await renderChat(p[1], p[2], p[3]);
+      if (p[0] === 'help') return renderHelp(p[1]);
+      if (p[0] === 'lab') return await renderLab(p[1], p[2]);
       if (p[0] === 'teacher' && isStaff()) {
         if (p[1] === 'students') return await renderStudents();
         if (p[1] === 'results') return await renderResults(p[2], p[3], p[4]);
@@ -556,7 +656,7 @@
       ${myLessonsCard()}
       <div class="class-grid">${myClasses().map(k => `
         <a class="class-tile" style="--c:${k.color}" href="#/class/${k.cls}">
-          <span class="num">${k.cls}</span><span class="lbl">клас</span>
+          <span class="num">${k.cls}</span><span class="lbl">клас${k.hidden ? ' · 🙈 приховано' : ''}</span>
           <span class="subs">${visibleSubjects(k).map(s => `<span>${esc(s.name)}</span>`).join('')}</span></a>`).join('')}
       </div>`;
   }
@@ -566,6 +666,7 @@
     if (!k) { $app.innerHTML = `<div class="empty"><span class="e">🤷</span>Клас не знайдено</div>`; return; }
     if (n <= 4) document.body.classList.add('theme-primary');
     if (isTeacher() && !myClasses().includes(k)) { location.hash = '#/'; return; }
+    if (user.role === 'student' && k.hidden) { $app.innerHTML = `<div class="card empty"><span class="e">🙈</span>Матеріали твого класу тимчасово приховані. Зверніться до вчителя.</div>`; return; }
     if (user.role === 'student') return renderStudentHome(k);
     const crumbs = isStaff() ? `<div class="crumbs"><a href="#/">Класи</a><span>›</span><span>${n} клас</span></div>` : '';
     $app.innerHTML = `${crumbs}
@@ -588,6 +689,7 @@
     const course = await loadCourse(id);
     if (course.primary) document.body.classList.add('theme-primary');
     const sims = await loadSims(id);
+    const labs = await loadLabs(id);
     const plans = await loadPlans(id, course);
     const results = user.role === 'student' ? (await Store.myResults()).filter(r => r.course === id) : [];
     const bm = bestMap(results);
@@ -622,15 +724,16 @@
           ${nextT ? `<a class="btn light sm" style="margin-top:12px" href="${nextT.href}">Наступний: ${esc(nextT.short)} →</a>` : '<p style="margin-top:8px">🎉 Усі тести виконано!</p>'}` : `<p style="font-size:14px">${lessons.length} ${plural(lessons.length, 'урок', 'уроки', 'уроків')} · ${course.sections.length} ${plural(course.sections.length, 'розділ', 'розділи', 'розділів')}</p>`}
         </div><div class="big-ico">${meta.icon}</div>
       </div>
-      ${hasUnits(id) ? unitsCard(id, results) : ''}${hasKr(id) ? krCard(id, results) : ''}${simsCount(sims) ? simsCard(id, sims) : ''}
+      ${hasUnits(id) ? unitsCard(id, results) : ''}${hasKr(id) ? krCard(id, results) : ''}${simsCount(sims) ? simsCard(id, sims) : ''}${labs.length ? labsCard(id, labs) : ''}
       ${course.sections.map(s => `
         <section class="section-block">
           <div class="section-head"><span class="sn" style="--sc:${s.color || meta.color}">${s.n}</span><h2>${esc(s.title)}</h2><span class="tag">${s.lessons.length} ${plural(s.lessons.length, 'урок', 'уроки', 'уроків')}</span></div>
+          ${labs.filter(x => x.sec === s.n).map(x => `<a class="card sim-row lab-row" href="#/lab/${id}/${x.n}"><span class="sim-row-i">🔬</span><span><b>Лабораторна робота № ${x.n}: ${esc(x.title)}</b><small>Віртуальний дослід за підручником · до § ${lessonNo(id, x.lesson) || ''} · вимірювання, таблиця, висновок</small></span><span class="btn brand sm">Виконати</span></a>`).join('')}
           ${(sims[s.n] || []).map((x, i) => `<a class="card sim-row" href="#/sim/${id}/${s.n}/${i}"><span class="sim-row-i">🧪</span><span><b>Симуляція: ${esc(x.title)}</b><small>Інтерактивна модель до теми розділу · з завданнями</small></span><span class="btn brand sm">Відкрити</span></a>`).join('')}
           <div class="lesson-list">
             ${s.lessons.map(l => `
               <div class="card lesson-row">
-                <span class="ln">${l.emoji || '📘'}</span>
+                <span class="pnum" title="Параграф ${l.n}">§${l.n}</span><span class="ln">${l.emoji || '📘'}</span>
                 <div><h3>${esc(l.title)}</h3><div class="meta">Урок ${l.n}${l.pages ? ' · ' + esc(pg(l.pages)) : ''} ${dateBadge(l)} ${status(l.id)}</div></div>
                 <div class="lesson-actions">
                   <a class="btn light sm" href="#/slides/${id}/${l.id}">🎞 Презентація</a>
@@ -641,14 +744,14 @@
                 </div>
               </div>`).join('')}
             <div class="card lesson-row summary-row">
-              <span class="ln">🏁</span>
+              <span class="pnum blank"></span><span class="ln">🏁</span>
               <div><h3>Підсумковий тест за розділ ${s.n}</h3><div class="meta">${C.sectionQuestions} питань · ${Math.round(C.sectionQuestions * C.secondsPerQuestion / 60)} хв ${status('section-' + s.n)}</div></div>
               <div class="lesson-actions">${testBtn('section-' + s.n, `#/test/${id}/section/${s.n}`, 'Почати', 'brand')}${user.role === 'student' ? g('section-' + s.n) : ''}</div>
             </div>
           </div>
         </section>`).join('')}
       <div class="card lesson-row summary-row final">
-        <span class="ln">🏆</span>
+        <span class="pnum blank"></span><span class="ln">🏆</span>
         <div><h3>Річний підсумковий тест</h3><div class="meta">${C.finalQuestions} питань за весь курс · ${Math.round(C.finalQuestions * C.secondsPerQuestion / 60)} хв ${status('final')}</div></div>
         <div class="lesson-actions">${testBtn('final', `#/test/${id}/final`, 'Почати', 'brand')}${user.role === 'student' ? g('final') : ''}</div>
       </div>
@@ -890,6 +993,35 @@
   }
   const simsCount = sims => Object.values(sims || {}).reduce((a, l) => a + l.length, 0);
   const simsFlat = sims => Object.keys(sims).sort((a, b) => a - b).flatMap(n => sims[n].map((x, i) => ({ n: +n, i, x })));
+  /* ---- лабораторні роботи (фізика 7–9) ---- */
+  async function loadLabs(id) {
+    if (!/^physics[789]$/.test(id)) return [];
+    try { if (!window.Labs) await loadScript('js/labs.js'); if (!Labs.has(id)) await loadScript(`js/labs/${id}.js`); } catch (e) { console.warn('labs', e); return []; }
+    return Labs.list(id);
+  }
+  function labsCard(id, labs) {
+    return `<a class="card lesson-row summary-row units-row sims-card" href="#/lab/${id}">
+      <span class="ln">🔬</span>
+      <div><h3>Лабораторні роботи</h3><div class="meta">${labs.length} ${plural(labs.length, 'віртуальна лабораторна робота', 'віртуальні лабораторні роботи', 'віртуальних лабораторних робіт')} за підручником · досліди, вимірювання, звіт</div></div>
+      <div class="lesson-actions"><span class="btn brand sm">Відкрити</span></div></a>`;
+  }
+  async function renderLab(id, n) {
+    const meta = catalogSubject(id);
+    if (!meta || (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) || !canCourse(meta.id)) { location.hash = '#/'; return; }
+    $app.innerHTML = '<div class="loader"><span></span></div>';
+    const course = await loadCourse(id); const labs = await loadLabs(id);
+    const crumbs = `<div class="crumbs"><a href="#/course/${id}">${esc(meta.name)} · ${meta.cls} клас</a><span>›</span>${n ? `<a href="#/lab/${id}">Лабораторні роботи</a><span>›</span><span>№ ${esc(n)}</span>` : '<span>Лабораторні роботи</span>'}</div>`;
+    if (!n) {
+      $app.innerHTML = `${crumbs}<div class="course-hero" style="--c:${meta.color}"><div><h1>🔬 Лабораторні роботи · ${esc(meta.name)}, ${meta.cls} клас</h1><p>Віртуальні досліди за підручником: збери установку, виконай вимірювання, заповни таблицю, обчисли результат і сформулюй висновок. Звіт можна роздрукувати або зберегти в PDF.</p></div><div class="big-ico">🧫</div></div>
+        <div class="sim-grid">${labs.map(x => { const sec = course.sections.find(z => z.n === x.sec) || { title: '' };
+          return `<a class="card sim-tile" href="#/lab/${id}/${x.n}"><span class="sim-tile-n" style="--sc:${sec.color || meta.color}">${x.n}</span><b>${esc(x.title)}</b><small>Розділ ${x.sec}. ${esc(sec.title)} · § ${lessonNo(id, x.lesson) || ''}</small></a>`; }).join('') || '<div class="card empty"><span class="e">🔬</span>Лабораторні роботи готуються.</div>'}</div>`;
+      return;
+    }
+    const k = labs.findIndex(x => +x.n === +n); if (k < 0) { location.hash = '#/lab/' + id; return; }
+    const L = labs[k], prev = labs[k - 1], next = labs[k + 1], sec = course.sections.find(z => z.n === L.sec) || { title: '' };
+    const nav = `<div class="sim-nav">${prev ? `<a class="btn light sm" href="#/lab/${id}/${prev.n}">← № ${prev.n}</a>` : ''}<a class="btn light sm" href="#/lab/${id}">Усі роботи</a>${next ? `<a class="btn light sm" href="#/lab/${id}/${next.n}">№ ${next.n} →</a>` : ''}</div>`;
+    view = Labs.open($app, id, n, { crumbs, nav, toast, subtitle: `${meta.name} · ${meta.cls} клас · Розділ ${L.sec}. ${sec.title} · до § ${lessonNo(id, L.lesson) || ''}` });
+  }
   function simsCard(id, sims) {
     const n = simsCount(sims);
     return `<a class="card lesson-row summary-row units-row sims-card" href="#/sims/${id}">
@@ -1030,7 +1162,7 @@
     const tests = [], sections = [];
     ix.s.forEach(([n, title]) => {
       const ls = ix.l.filter(l => l[3] === n);
-      ls.forEach(([lid, ln, lt, , em]) => tests.push({ key: lid, title: ln + '. ' + lt, short: 'Урок ' + ln, emoji: em || '📘', href: `#/test/${id}/lesson/${lid}`, slides: `#/slides/${id}/${lid}`, lesson: true }));
+      ls.forEach(([lid, ln, lt, , em]) => tests.push({ key: lid, title: '§ ' + ln + '. ' + lt, short: '§ ' + ln, emoji: em || '📘', href: `#/test/${id}/lesson/${lid}`, slides: `#/slides/${id}/${lid}`, lesson: true }));
       tests.push({ key: 'section-' + n, title: 'Підсумковий тест за розділ ' + n + ' «' + title + '»', short: 'Розділ ' + n, emoji: '🏁', href: `#/test/${id}/section/${n}`, summary: true });
       sections.push({ n, title, lessons: ls.map(l => l[0]) });
     });
@@ -1185,7 +1317,7 @@
   function myAttempts(rs, withSubject) {
     if (!rs.length) return '<div class="empty" style="padding:20px">Ще немає спроб — час пройти перший тест! 🚀</div>';
     return `<div class="table-wrap"><table class="tbl"><thead><tr><th>Дата</th>${withSubject ? '<th>Предмет</th>' : ''}<th>Тест</th><th class="c">Оцінка</th><th class="c">Час</th></tr></thead><tbody>
-      ${rs.map(r => { const sj = catalogSubject(r.course); return `<tr><td>${fmtDate(r.atMs)}</td>${withSubject ? `<td>${sj ? esc(sj.icon) + ' ' + esc(sj.name) : ''}</td>` : ''}<td>${esc(r.title)}</td>
+      ${rs.map(r => { const sj = catalogSubject(r.course); return `<tr><td>${fmtDate(r.atMs)}</td>${withSubject ? `<td>${sj ? esc(sj.icon) + ' ' + esc(sj.name) : ''}</td>` : ''}<td>${esc(resTitle(r))}${r.manual ? ' <span class="tag" title="Оцінку вніс учитель">✍️</span>' : ''}</td>
         <td class="c"><span class="cell ${r.passed ? gradeClass(r.score) : 'g-lo'}">${r.score}</span>${r.passed ? '' : ' <span class="muted">не зарах.</span>'}</td><td class="c">${fmtDur(r.durationSec || 0)}</td></tr>`; }).join('')}
     </tbody></table></div>`;
   }
@@ -1457,10 +1589,10 @@
       const s = D.stuById[r.uid], x = D.subById[r.course];
       html += `<tr><td class="t-time">${time(r.atMs)}</td>
         ${noStudent ? '' : `<td class="t-name">${s ? `<a href="javascript:void(0)" data-st="${s.uid}">${esc(s.name)}</a><small>${s.cls} кл.</small>` : `${esc(r.name || '—')}<small>видалений</small>`}</td>`}
-        <td class="t-test"><span>${esc(r.title)}</span><small>${x ? esc(x.icon) + ' ' + esc(x.name) + ' · ' + x.cls + ' кл.' : ''} · ${KIND[r.kind] || ''}</small></td>
+        <td class="t-test"><span>${esc(resTitle(r))}${r.manual ? ' <span class="tag" title="Оцінку внесено вчителем вручну">✍️ вручну</span>' : ''}</span><small>${x ? esc(x.icon) + ' ' + esc(x.name) + ' · ' + x.cls + ' кл.' : ''} · ${KIND[r.kind] || ''}</small></td>
         <td class="c"><span class="cell ${r.passed ? gradeClass(r.score) : 'g-lo'}" title="${r.passed ? 'Зараховано' : 'Не зараховано'}">${r.score}${r.passed ? '' : '✕'}</span></td>
-        <td class="c t-meta"><b>${r.full}/${r.total}</b><small>правильно</small></td>
-        <td class="c t-meta"><b>${fmtDur(r.durationSec || 0)}${r.auto ? ' ⌛' : ''}</b><small>${r.leaves ? '⚠️ виходів: ' + r.leaves : 'без виходів'}</small></td>
+        ${r.manual ? `<td class="c t-meta" colspan="2"><b>✍️ вручну</b><small>${esc(r.byName || 'вчитель')}${r.note ? ' · ' + esc(r.note) : ''}</small></td>` : `<td class="c t-meta"><b>${r.full}/${r.total}</b><small>правильно</small></td>
+        <td class="c t-meta"><b>${fmtDur(r.durationSec || 0)}${r.auto ? ' ⌛' : ''}</b><small>${r.leaves ? '⚠️ виходів: ' + r.leaves : 'без виходів'}</small></td>`}
         ${withDel ? `<td class="c"><button class="icon-btn adm-del" data-rdel="${esc(r.id)}" title="Видалити спробу (учень зможе пройти тест ще раз)">✕</button></td>` : ''}</tr>`;
     });
     return `<div class="table-wrap"><table class="tbl tbl-compact tbl-att"><tbody>${html}</tbody></table></div>`;
@@ -1484,13 +1616,20 @@
     let shown = 100;
     box.innerHTML = `<div class="toolbar rs-filters">
         <select class="input" id="fC"><option value="">Усі класи</option>${classes.map(c => `<option value="${c}" ${f.c == c ? 'selected' : ''}>${c} клас</option>`).join('')}</select>
-        <select class="input" id="fS"><option value="">Усі предмети</option>${D.subs.map(x => `<option value="${x.id}" ${f.s === x.id ? 'selected' : ''}>${esc(x.name)} · ${x.cls} кл.</option>`).join('')}</select>
+        <select class="input" id="fS"></select>
         <select class="input" id="fK"><option value="">Усі тести</option>${Object.entries(KIND).map(([k, v]) => `<option value="${k}" ${f.k === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
         <select class="input" id="fP"><option value="">Увесь час</option>${[[1, 'Сьогодні'], [7, '7 днів'], [30, '30 днів']].map(([d, t]) => `<option value="${d}" ${f.p == d ? 'selected' : ''}>${t}</option>`).join('')}</select>
         <select class="input" id="fR"><option value="">Усі спроби</option><option value="1" ${f.r === '1' ? 'selected' : ''}>Зараховані</option><option value="0" ${f.r === '0' ? 'selected' : ''}>Не зараховані</option></select>
         <input class="input" id="fQ" placeholder="🔍 Учень або тест" value="${esc(f.q || '')}">
         <button class="btn light sm" id="fCsv">⬇️ CSV (Excel)</button>
+        <button class="btn brand sm" id="fMan" title="Внести оцінку за тест, який учень уже виконав раніше">✍️ Зарахувати вручну</button>
       </div><div id="allOut"></div>`;
+    const fillSubs = keep => { const c = box.querySelector('#fC').value, sel = box.querySelector('#fS');
+      const list = D.subs.filter(x => !c || x.cls == c).slice().sort((a, b) => a.cls - b.cls || a.name.localeCompare(b.name, 'uk'));
+      sel.innerHTML = `<option value="">${c ? 'Усі предмети ' + c + ' класу' : 'Усі предмети'}</option>` + list.map(x => `<option value="${x.id}">${esc(x.icon)} ${esc(x.name)}${c ? '' : ' · ' + x.cls + ' кл.'}</option>`).join('');
+      sel.value = list.some(x => x.id === keep) ? keep : ''; };
+    fillSubs(f.s);
+    box.querySelector('#fMan').onclick = () => manualCreditDialog(D, { cls: box.querySelector('#fC').value, course: box.querySelector('#fS').value });
     const get = () => ({ c: box.querySelector('#fC').value, s: box.querySelector('#fS').value, k: box.querySelector('#fK').value, p: box.querySelector('#fP').value, r: box.querySelector('#fR').value, q: box.querySelector('#fQ').value.trim().toLowerCase() });
     const filtered = () => { const v = get(); ss.setItem('rsAllF', JSON.stringify(v));
       return D.results.filter(r => { const x = D.subById[r.course], s = D.stuById[r.uid];
@@ -1508,7 +1647,7 @@
         <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn danger" data-close id="dGo">Видалити</button></div>`,
         b2 => b2.querySelector('#dGo').onclick = async () => { await delAttempt(D, bt.dataset.rdel); draw(); }));
     };
-    box.querySelectorAll('.rs-filters select').forEach(s => s.onchange = () => { shown = 100; draw(); });
+    box.querySelectorAll('.rs-filters select').forEach(s => s.onchange = () => { if (s.id === 'fC') fillSubs(box.querySelector('#fS').value); shown = 100; draw(); });
     let t; box.querySelector('#fQ').oninput = () => { clearTimeout(t); t = setTimeout(() => { shown = 100; draw(); }, 250); };
     box.querySelector('#fCsv').onclick = () => downloadCsv('rezultaty_usi.csv', [['Дата', 'Учень', 'Клас', 'Предмет', 'Вид', 'Тест', 'Оцінка', 'Зараховано', 'Повністю правильно', 'Питань', 'Час (с)', 'Виходи']]
       .concat(filtered().map(r => { const s = D.stuById[r.uid], x = D.subById[r.course];
@@ -1518,7 +1657,26 @@
 
   /* ---- за предметами ---- */
   function rsSubjects(D, box) {
-    const rows = D.subs.map(x => subjectRow(D, x));
+    const f = JSON.parse(ss.getItem('rsSubF') || '{}');
+    const classes = [...new Set(D.subs.map(x => x.cls))].sort((a, b) => a - b);
+    box.innerHTML = `<div class="toolbar rs-filters">
+        <select class="input" id="bC"><option value="">Усі класи</option>${classes.map(c => `<option value="${c}" ${f.c == c ? 'selected' : ''}>${c} клас</option>`).join('')}</select>
+        <select class="input" id="bS"></select>
+      </div><div id="subOut"></div>`;
+    const cS = box.querySelector('#bC'), sS = box.querySelector('#bS');
+    const fill = keep => { const list = D.subs.filter(x => !cS.value || x.cls == cS.value).slice().sort((a, b) => a.name.localeCompare(b.name, 'uk') || a.cls - b.cls);
+      sS.innerHTML = '<option value="">Усі предмети</option>' + list.map(x => `<option value="${x.id}">${esc(x.icon)} ${esc(x.name)}${cS.value ? '' : ' · ' + x.cls + ' кл.'}</option>`).join('');
+      sS.value = list.some(x => x.id === keep) ? keep : ''; };
+    fill(f.s);
+    const draw = () => { ss.setItem('rsSubF', JSON.stringify({ c: cS.value, s: sS.value }));
+      if (sS.value) { const x = D.subById[sS.value]; box.querySelector('#subOut').innerHTML = ''; subjectInline(D, x, box.querySelector('#subOut')); return; }
+      rsSubjectCards(D, box.querySelector('#subOut'), cS.value); };
+    cS.onchange = () => { fill(sS.value); draw(); }; sS.onchange = draw;
+    draw();
+  }
+  /* картки предметів (усі або одного класу) */
+  function rsSubjectCards(D, box, onlyCls) {
+    const rows = D.subs.filter(x => !onlyCls || x.cls == onlyCls).slice().sort((a, b) => a.name.localeCompare(b.name, 'uk')).map(x => subjectRow(D, x));
     const byCls = [...new Set(rows.map(r => r.x.cls))].sort((a, b) => a - b);
     box.innerHTML = byCls.map(c => `<h3 class="grp-h"><span class="sp-cnum">${c}</span>${c} клас</h3>
       <div class="sub-cards">${rows.filter(r => r.x.cls === c).map(r => `
@@ -1533,12 +1691,23 @@
       `<p class="muted rs-sum">Смужка — частка зарахованих тестів за уроки від усіх можливих; кольорова шкала — рівні досягнень.</p>`;
     box.querySelectorAll('[data-sub]').forEach(bt => bt.onclick = () => subjectDetail(D, D.subById[bt.dataset.sub]));
   }
+  /* детальна статистика предмета просто на сторінці (обрано в списку) */
+  function subjectInline(D, x, box) {
+    box.innerHTML = `<div class="card pad">${subjectDetailHtml(D, x, true)}</div>`;
+    box.querySelectorAll('[data-st]').forEach(el => el.onclick = () => studentProfile(D, D.stuById[el.dataset.st]));
+    const m = box.querySelector('[data-man]'); if (m) m.onclick = () => manualCreditDialog(D, { cls: x.cls, course: x.id });
+  }
   function subjectDetail(D, x) {
+    modal(subjectDetailHtml(D, x, false), bx => bx.querySelectorAll('[data-st]').forEach(el => el.onclick = () => studentProfile(D, D.stuById[el.dataset.st])), { wide: true });
+  }
+  function subjectDetailHtml(D, x, inline) {
     const r = subjectRow(D, x);
     const studs = D.students.filter(s => s.cls === x.cls).map(s => ({ s, m: metric(D, s.uid, x.id) })).sort((a, b) => (b.m.avg ?? -1) - (a.m.avg ?? -1));
     const hard = hardTests(D, z => z.course === x.id).slice(0, 5);
     const sections = ((window.LESSON_INDEX || {})[x.id] || { s: [] }).s;
-    modal(`<h2>${subLabel(x)}</h2>
+    const lessons = ((window.LESSON_INDEX || {})[x.id] || { l: [] }).l;
+    const perLesson = lessons.map(l => { const sc = studs.map(o => ((D.best[o.s.uid] || {})[x.id] || {})[l[0]]).filter(e => e && e.best != null).map(e => e.best); return { l, n: sc.length, avg: avg(sc) }; });
+    return `<h2>${subLabel(x)}</h2>
       <div class="stat-tiles sm"><div class="card stat-tile"><div class="v">${r.avg ?? '—'}</div><div class="k">Середній бал</div></div>
         <div class="card stat-tile"><div class="v">${r.done == null ? '—' : Math.round(r.done * 100) + '%'}</div><div class="k">Пройдено уроків</div></div>
         <div class="card stat-tile"><div class="v">${r.active}/${r.students}</div><div class="k">Учнів проходили</div></div></div>
@@ -1548,16 +1717,88 @@
           return `<tr><td>${n}. ${esc(t)}</td><td class="c">${sc.length}/${studs.length}</td><td class="c"><span class="cell ${gradeClass(avg(sc))}">${avg(sc) ?? '—'}</span></td></tr>`; }).join('')}</tbody></table></div>` : ''}
       <h3 class="rs-h">Рейтинг учнів</h3><div class="table-wrap"><table class="tbl"><thead><tr><th>#</th><th>Учень</th><th class="c">Середній</th><th style="min-width:130px">Уроки</th><th class="c">Остання спроба</th></tr></thead><tbody>
         ${studs.map((o, i) => `<tr><td>${i + 1}</td><td><a href="javascript:void(0)" data-st="${o.s.uid}" style="font-weight:800">${esc(o.s.name)}</a></td><td class="c"><span class="cell ${gradeClass(o.m.avg)}">${o.m.avg ?? '—'}</span></td><td>${doneBar(o.m.done)}</td><td class="c">${ago(o.m.last)}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">У класі немає учнів</td></tr>'}</tbody></table></div>
-      ${hard.length ? `<h3 class="rs-h">Найскладніші тести</h3><ul class="rs-list">${hard.map(h => `<li><b>${esc(h.title)}</b> — середній ${h.avg}, зараховано ${h.rate}% (${h.n} спроб)</li>`).join('')}</ul>` : ''}
-      <div class="m-actions"><a class="btn light" href="#/teacher/results/journal/${x.cls}/${x.id}" data-close>📒 Журнал класу</a><button class="btn brand" data-close>Закрити</button></div>`,
-      box => box.querySelectorAll('[data-st]').forEach(el => el.onclick = () => studentProfile(D, D.stuById[el.dataset.st])), { wide: true });
+      ${inline && perLesson.length ? `<h3 class="rs-h">За параграфами</h3><div class="table-wrap" style="max-height:420px"><table class="tbl tbl-compact"><thead><tr><th>Параграф</th><th class="c">Склали</th><th class="c">Середній</th></tr></thead><tbody>
+        ${perLesson.map(o => `<tr><td><b>§ ${o.l[1]}</b> ${esc(o.l[2])}</td><td class="c">${o.n}/${studs.length}</td><td class="c"><span class="cell ${gradeClass(o.avg)}">${o.avg ?? '—'}</span></td></tr>`).join('')}</tbody></table></div>` : ''}
+      ${hard.length ? `<h3 class="rs-h">Найскладніші тести</h3><ul class="rs-list">${hard.map(h => `<li><b>${esc(resTitle(h))}</b> — середній ${h.avg}, зараховано ${h.rate}% (${h.n} спроб)</li>`).join('')}</ul>` : ''}
+      <div class="m-actions"><a class="btn light" href="#/teacher/results/journal/${x.cls}/${x.id}" ${inline ? '' : 'data-close'}>📒 Журнал класу</a>${inline ? '<button class="btn brand" data-man>✍️ Зарахувати вручну</button>' : '<button class="btn brand" data-close>Закрити</button>'}</div>`;
+  }
+
+  /* ---- ручне зарахування: учень виконав тест раніше (на папері, до появи порталу, без входу) ---- */
+  function manualCreditDialog(D, pre) {
+    pre = pre || {};
+    const classes = [...new Set(D.subs.map(x => x.cls))].sort((a, b) => a - b);
+    const today = isoDay(new Date());
+    modal(`<h2>✍️ Зарахувати тест вручну</h2>
+      <p class="muted" style="font-weight:700;margin-bottom:10px">Для тестів, які учень уже виконав раніше самостійно (на папері, на уроці, до появи порталу). Оцінку буде позначено «✍️ вручну», а тест для учня — зарахованим.</p>
+      <div class="m-grid2">
+        <div class="field"><label>Клас</label><select class="input" id="mC">${classes.map(c => `<option value="${c}" ${pre.cls == c ? 'selected' : ''}>${c} клас</option>`).join('')}</select></div>
+        <div class="field"><label>Предмет</label><select class="input" id="mS"></select></div>
+      </div>
+      <div class="field"><label>Учень</label><select class="input" id="mU"></select></div>
+      <div class="field"><label>Тест</label><select class="input" id="mT"></select><small class="muted" id="mTinfo"></small></div>
+      <div class="m-grid2">
+        <div class="field"><label>Оцінка (1–12)</label><input class="input" id="mScore" type="number" min="1" max="12" step="1" placeholder="напр. 10"></div>
+        <div class="field"><label>Дата виконання</label><input class="input" id="mDate" type="date" value="${today}" max="${today}"></div>
+      </div>
+      <div class="field"><label>Примітка (необов’язково)</label><input class="input" id="mNote" maxlength="120" placeholder="напр. письмова робота на уроці"></div>
+      <div class="form-error" id="mErr"></div>
+      <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="mGo">Зарахувати</button><button class="btn light" id="mGoMore" title="Зберегти й внести ще одну оцінку">Зарахувати й ще</button></div>`, (bx, close) => {
+      const cS = bx.querySelector('#mC'), sS = bx.querySelector('#mS'), uS = bx.querySelector('#mU'), tS = bx.querySelector('#mT');
+      const fillS = () => { const list = D.subs.filter(x => x.cls == cS.value).slice().sort((a, b) => a.name.localeCompare(b.name, 'uk'));
+        sS.innerHTML = list.map(x => `<option value="${x.id}">${esc(x.icon)} ${esc(x.name)}</option>`).join('');
+        if (pre.course && list.some(x => x.id === pre.course)) sS.value = pre.course; };
+      const fillU = () => { const list = D.students.filter(s => s.cls == cS.value);
+        uS.innerHTML = list.length ? list.map(s => `<option value="${s.uid}">${esc(s.name)}</option>`).join('') : '<option value="">У класі немає учнів</option>';
+        if (pre.uid && list.some(s => s.uid === pre.uid)) uS.value = pre.uid; };
+      const fillT = () => { const ix = (window.LESSON_INDEX || {})[sS.value] || { s: [], l: [] }, done = (D.best[uS.value] || {})[sS.value] || {};
+        const opts = [];
+        ix.s.forEach(([n, t]) => { opts.push(`<optgroup label="Розділ ${n}. ${esc(t)}">`);
+          ix.l.filter(l => l[3] === n).forEach(l => { const e = done[l[0]]; opts.push(`<option value="${l[0]}" ${e && e.best != null ? 'disabled' : ''}>§ ${l[1]}. ${esc(l[2])}${e && e.best != null ? ' — уже зараховано (' + e.best + ')' : ''}</option>`); });
+          const e = done['section-' + n]; opts.push(`<option value="section-${n}" ${e && e.best != null ? 'disabled' : ''}>🏁 Підсумковий за розділ ${n}${e && e.best != null ? ' — уже зараховано' : ''}</option></optgroup>`); });
+        const ef = done.final; if (ix.s.length) opts.push(`<option value="final" ${ef && ef.best != null ? 'disabled' : ''}>🏆 Річний підсумковий${ef && ef.best != null ? ' — уже зараховано' : ''}</option>`);
+        tS.innerHTML = opts.join('') || '<option value="">Тестів немає</option>';
+        const first = [...tS.options].find(o => !o.disabled && o.value); if (first) tS.value = first.value; };
+      cS.onchange = () => { fillS(); fillU(); fillT(); }; sS.onchange = fillT; uS.onchange = fillT;
+      fillS(); fillU(); fillT();
+      const save = async more => {
+        const err = bx.querySelector('#mErr'); err.textContent = '';
+        const score = Math.round(+bx.querySelector('#mScore').value), st = D.stuById[uS.value], key = tS.value, x = D.subById[sS.value];
+        if (!st) { err.textContent = 'Оберіть учня'; return; }
+        if (!x || !key) { err.textContent = 'Оберіть тест'; return; }
+        if (!(score >= 1 && score <= 12)) { err.textContent = 'Оцінка — ціле число від 1 до 12'; return; }
+        if (score < C.passScore) { err.textContent = `Тест зараховується від ${C.passScore} балів. Нижчу оцінку вносити вручну не потрібно.`; return; }
+        const ix = (window.LESSON_INDEX || {})[x.id] || { s: [], l: [] };
+        let kind = 'lesson', title = '', extra = {};
+        if (key === 'final') { kind = 'final'; title = 'Річний підсумковий тест'; }
+        else if (/^section-/.test(key)) { const n = +key.split('-')[1], sec = ix.s.find(z => z[0] === n); kind = 'section'; title = `Підсумковий тест · Розділ ${n}. ${sec ? sec[1] : ''}`; extra.sectionN = n; }
+        else { const l = ix.l.find(z => z[0] === key); title = 'Тест: ' + (l ? l[2] : key); extra.lessonId = key; extra.sectionN = l ? l[3] : null; }
+        const d = bx.querySelector('#mDate').value, atMs = d ? new Date(d + 'T12:00').getTime() : Date.now();
+        const r = Object.assign({ uid: st.uid, name: st.name, cls: st.cls, course: x.id, kind, testId: key, title, score, full: 0, total: 0, durationSec: 0, leaves: 0,
+          atMs, byName: user.name || '', note: bx.querySelector('#mNote').value.trim() }, extra);
+        const b = bx.querySelector('#mGo'); b.disabled = true;
+        try { await Store.saveManualResult(r); }
+        catch (e) { err.textContent = e.message; b.disabled = false; return; }
+        RS = null; toast(`Зараховано: ${st.name} — ${score} б.`);
+        if (more) { pre = { cls: cS.value, course: sS.value }; close(); const D2 = await loadResultsData(true); manualCreditDialog(D2, pre); }
+        else { close(); route(); }
+      };
+      bx.querySelector('#mGo').onclick = () => save(false);
+      bx.querySelector('#mGoMore').onclick = () => save(true);
+    });
   }
 
   /* ---- за класами ---- */
   function rsClasses(D, box) {
-    const classes = [...new Set(D.subs.map(x => x.cls))].sort((a, b) => a - b);
+    const all = [...new Set(D.subs.map(x => x.cls))].sort((a, b) => a - b);
+    const pick = ss.getItem('rsClsF') || '';
+    box.innerHTML = `<div class="toolbar rs-filters"><select class="input" id="kC"><option value="">Усі класи</option>${all.map(c => `<option value="${c}" ${pick == c ? 'selected' : ''}>${c} клас</option>`).join('')}</select></div><div id="clsOut"></div>`;
+    box.querySelector('#kC').onchange = e => { ss.setItem('rsClsF', e.target.value); rsClassesDraw(D, box.querySelector('#clsOut'), e.target.value); };
+    rsClassesDraw(D, box.querySelector('#clsOut'), pick);
+  }
+  function rsClassesDraw(D, box, pick) {
+    const classes = [...new Set(D.subs.map(x => x.cls))].filter(c => !pick || c == pick).sort((a, b) => a - b);
     const rows = classes.map(c => {
-      const subs = D.subs.filter(x => x.cls === c).map(x => subjectRow(D, x));
+      const subs = D.subs.filter(x => x.cls === c).slice().sort((a, b) => a.name.localeCompare(b.name, 'uk')).map(x => subjectRow(D, x));
       const studs = D.students.filter(s => s.cls === c);
       const scores = subs.flatMap(r => r.scores);
       const week = new Set(D.results.filter(r => Date.now() - (r.atMs || 0) < 7 * DAY && studs.some(s => s.uid === r.uid) && subs.some(z => z.x.id === r.course)).map(r => r.uid)).size;
@@ -1629,8 +1870,9 @@
       <h3 class="rs-h">Усі спроби (${rs.length})</h3>
       <p class="muted" style="font-size:13px;font-weight:700;margin-bottom:8px">Зарахований тест блокується для учня. Щоб дозволити пройти його ще раз, видаліть спробу (✕).</p>
       ${attemptsTable(D, rs, true, true)}
-      <div class="m-actions"><button class="btn brand" data-close>Закрити</button></div>`;
+      <div class="m-actions"><button class="btn light" id="spMan">✍️ Зарахувати вручну</button><button class="btn brand" data-close>Закрити</button></div>`;
     modal(draw(), function mount(box, close) {
+      const mb = box.querySelector('#spMan'); if (mb) mb.onclick = () => { close(); manualCreditDialog(D, { cls: s.cls, uid: s.uid }); };
       box.querySelectorAll('[data-rdel]').forEach(bt => bt.onclick = async () => {
         await delAttempt(D, bt.dataset.rdel); rs = rs.filter(x => x.id !== bt.dataset.rdel);
         Object.assign(r, studentRow(D, s)); box.innerHTML = draw();
@@ -1951,7 +2193,7 @@
     function draw() {
       $app.innerHTML = `
         <div class="page-head"><div><h1>Предмети за класами</h1>
-          <p>Додавайте й прибирайте класи та предмети, змінюйте назви, значки й порядок, приховуйте від учнів.</p></div>
+          <p>Додавайте й прибирайте класи та предмети, змінюйте назви, значки й порядок, приховуйте від учнів окремі предмети або цілі класи.</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <button class="btn light" id="addCls">＋ Додати клас</button>
             <button class="btn light" id="resetCat">↺ Стандартний список</button>
@@ -1964,12 +2206,13 @@
         </div>
         <div class="adm-tools"><button class="btn light sm" id="admOpenAll">Розгорнути всі</button><button class="btn light sm" id="admCloseAll">Згорнути всі</button></div>
         <div class="adm-grid">${draft.map((k, ki) => `
-          <details class="card adm-class" data-ki="${ki}" ${openCls.has(k.cls) ? 'open' : ''}>
+          <details class="card adm-class ${k.hidden ? 'is-hidden' : ''}" data-ki="${ki}" ${openCls.has(k.cls) ? 'open' : ''}>
             <summary class="adm-head">
               <span class="adm-num">${k.cls}</span>
               <span class="adm-title"><b>${k.cls} клас</b><small>${k.subjects.length ? k.subjects.map(sj => esc(sj.icon) + ' ' + esc(sj.name)).join(' · ') : 'предметів немає'}</small></span>
-              <span class="tag">${k.subjects.length}</span>
+              ${k.hidden ? '<span class="tag">🙈 клас приховано</span>' : ''}<span class="tag">${k.subjects.length}</span>
             </summary>
+            <label class="adm-check adm-clshide" title="Учні цього класу не бачитимуть жодного предмета"><input type="checkbox" ${k.hidden ? 'checked' : ''} data-k="${ki}" data-f="hidden"> 🙈 Приховати весь ${k.cls} клас від учнів</label>
             <div class="adm-list">
               ${k.subjects.length ? k.subjects.map((sj, si) => `
                 <div class="adm-row ${sj.hidden ? 'is-hidden' : ''}">
@@ -1997,7 +2240,8 @@
       const t = e.target; if (!t.dataset || t.dataset.f === undefined || !$app.querySelector('#saveCat')) return;
       const k = draft[+t.dataset.k]; if (!k) return;
       const f = t.dataset.f;
-      if (t.dataset.s === undefined) { k[f] = t.value; t.closest('.adm-class').style.setProperty('--c', t.value); }
+      if (t.dataset.s === undefined && f === 'hidden') { k.hidden = t.checked; t.closest('.adm-class').classList.toggle('is-hidden', t.checked); }
+      else if (t.dataset.s === undefined) { k[f] = t.value; t.closest('.adm-class').style.setProperty('--c', t.value); }
       else {
         const sj = k.subjects[+t.dataset.s];
         sj[f] = t.type === 'checkbox' ? t.checked : t.value;
@@ -2030,7 +2274,7 @@
       if (b.id === 'saveCat') {
         b.disabled = true; b.textContent = 'Зберігаємо…';
         try {
-          const clean = draft.map(k => ({ cls: k.cls, color: k.color, subjects: k.subjects.map(sj => Object.assign({}, sj, { name: (sj.name || '').trim() || 'Без назви', icon: (sj.icon || '').trim() || '📘' })) }));
+          const clean = draft.map(k => ({ cls: k.cls, color: k.color, hidden: !!k.hidden, subjects: k.subjects.map(sj => Object.assign({}, sj, { name: (sj.name || '').trim() || 'Без назви', icon: (sj.icon || '').trim() || '📘' })) }));
           await Store.saveCatalog(clean); applyCatalog(clean); draft = exportCatalog(); dirty = false; draw(); toast('Предмети збережено');
         } catch (er) { b.disabled = false; b.textContent = '💾 Зберегти зміни'; toast('Помилка: ' + er.message); }
         return;
@@ -2202,9 +2446,20 @@
   /* ---- адміністратор: сторінка «Розклад» ---- */
   async function renderScheduleAdmin() {
     let draft = null;   // щойно завантажений файл (ще не збережений)
+    const sf = JSON.parse(ss.getItem('schedF') || '{}'); /* фільтри: клас, предмет, вчитель */
+    const sfOk = e => (!sf.g || String(e.g) === String(sf.g)) && (!sf.s || e.s === sf.s) && (!sf.t || (e.t || []).includes(sf.t));
+    const sfBar = S => { const gs = [...new Set(S.entries.map(e => +e.g))].sort((a, b) => a - b);
+      const subs = [...new Set(S.entries.filter(e => !sf.g || String(e.g) === String(sf.g)).map(e => e.s))].sort((a, b) => a.localeCompare(b, 'uk'));
+      const ts = [...new Set(S.entries.filter(e => (!sf.g || String(e.g) === String(sf.g)) && (!sf.s || e.s === sf.s)).flatMap(e => e.t || []))].sort((a, b) => a.localeCompare(b, 'uk'));
+      return `<div class="toolbar rs-filters sched-f"><b class="muted">🔎 Фільтр:</b>
+        <select class="input" data-sf="g"><option value="">Усі класи</option>${gs.map(g => `<option value="${g}" ${String(sf.g) === String(g) ? 'selected' : ''}>${g} клас</option>`).join('')}</select>
+        <select class="input" data-sf="s"><option value="">Усі предмети</option>${subs.map(x => `<option ${sf.s === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+        <select class="input" data-sf="t"><option value="">Усі вчителі</option>${ts.map(x => `<option ${sf.t === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+        ${sf.g || sf.s || sf.t ? '<button class="btn light sm" data-sfx>✕ Скинути</button>' : ''}</div>`; };
     const draw = () => {
       const S = draft || SCHED;
       const map = Object.assign({}, (SCHED && SCHED.map) || {});
+      if (draft && draft._map) Object.assign(map, draft._map);
       if (draft) draft.entries.forEach(e => { const k = e.s + '|' + e.g; if (!(k in map)) map[k] = autoSubject(e.s, e.g); });
       $app.innerHTML = `<div class="page-head"><div><h1>🗓 Шкільний розклад</h1><p>Зв’язок із конструктором розкладу: уроки на сьогодні для вчителів, дати уроків і нагадування учням про тести</p></div></div>
         <div class="card pad sched-steps">
@@ -2223,10 +2478,11 @@
           <div class="card stat-tile"><div class="v">${(S.teachers || []).length}</div><div class="k">Вчителів</div></div>
         </div>
         ${draft ? '<div class="flag-box">📄 Файл прочитано, але ще не збережено. Перевірте відповідність предметів і натисніть «Зберегти розклад на порталі».</div>' : `<p class="muted rs-sum">Збережено: ${SCHED.importedAt ? fmtDate(SCHED.importedAt) : '—'}</p>`}
-        <div class="card pad"><h3 class="rs-h">📚 Відповідність предметів</h3>
-          <div class="table-wrap"><table class="tbl"><thead><tr><th>Клас</th><th>Предмет у розкладі</th><th>Вчитель</th><th class="c">Годин за рік</th><th>Предмет на порталі</th><th class="c">Уроків у підручнику</th></tr></thead><tbody>
+        ${sfBar(S)}
+        <div class="card pad"><h3 class="rs-h">📚 Відповідність предметів${sf.g || sf.s || sf.t ? ` <small class="muted">· показано ${S.entries.filter(sfOk).length} з ${S.entries.length}</small>` : ''}</h3>
+          <div class="table-wrap" style="max-height:60vh"><table class="tbl tbl-compact"><thead><tr><th>Клас</th><th>Предмет у розкладі</th><th>Вчитель</th><th class="c">Годин за рік</th><th>Предмет на порталі</th><th class="c">Уроків у підручнику</th></tr></thead><tbody>
           ${S.entries.map(e => { const k = e.s + '|' + e.g, kl = classInfo(e.g); const lc = map[k] ? ((window.LESSON_INDEX || {})[map[k]] || { l: [] }).l.length : 0;
-            return `<tr><td class="c">${e.g}</td><td style="font-weight:800">${esc(e.s)}</td><td><small>${(e.t || []).map(esc).join(', ')}</small></td><td class="c">${e.d.length}</td>
+            return `<tr ${sfOk(e) ? '' : 'hidden'}><td class="c">${e.g}</td><td style="font-weight:800">${esc(e.s)}</td><td><small>${(e.t || []).map(esc).join(', ')}</small></td><td class="c">${e.d.length}</td>
             <td><select class="input sm" data-map="${esc(k)}" ${draft ? '' : 'disabled'}><option value="">— не пов’язувати</option>${(kl ? kl.subjects : []).map(s => `<option value="${esc(s.id)}" ${map[k] === s.id ? 'selected' : ''}>${esc(s.icon)} ${esc(s.name)}${s.ready ? '' : ' (готується)'}</option>`).join('')}</select></td>
             <td class="c">${lc || '—'}</td></tr>`; }).join('')}</tbody></table></div>
           ${draft ? '' : `<p class="muted" style="font-size:13px;font-weight:700">Щоб змінити відповідність, завантажте файл розкладу ще раз.</p>
@@ -2239,6 +2495,11 @@
           <select class="input" id="tMe" style="max-width:360px"><option value="">— не показувати мої уроки</option>${(S.teachers || []).map(t => `<option ${S.adminTeacher === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>` : ''}
         <div id="tTeachers"></div><div id="tStudents"></div>` : ''}`;
       const err = $app.querySelector('#tErr');
+      $app.querySelectorAll('[data-sf]').forEach(sel => sel.onchange = () => {
+        $app.querySelectorAll('[data-map]').forEach(x => { map[x.dataset.map] = x.value; });
+        sf[sel.dataset.sf] = sel.value; if (sel.dataset.sf === 'g') { sf.s = ''; sf.t = ''; } if (sel.dataset.sf === 's') sf.t = '';
+        ss.setItem('schedF', JSON.stringify(sf)); if (draft) draft._map = map; draw(); });
+      const sfx = $app.querySelector('[data-sfx]'); if (sfx) sfx.onclick = () => { sf.g = sf.s = sf.t = ''; ss.setItem('schedF', '{}'); draw(); };
       $app.querySelector('#tFile').onchange = async ev => {
         const f = ev.target.files[0]; if (!f) return;
         try { draft = Object.assign(parseTimetableBackup(JSON.parse(await f.text())), { file: f.name }); draw(); }
@@ -2249,7 +2510,7 @@
         <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn danger" data-close id="dGo">Від’єднати</button></div>`,
         b => b.querySelector('#dGo').onclick = async () => { await Store.saveSchedule(null); SCHED = null; draw(); toast('Розклад від’єднано'); });
       const cancel = $app.querySelector('#tCancel'); if (cancel) cancel.onclick = () => { draft = null; draw(); };
-      $app.querySelectorAll('[data-map]').forEach(sel => sel.onchange = () => { map[sel.dataset.map] = sel.value; });
+      $app.querySelectorAll('[data-map]').forEach(sel => sel.onchange = () => { map[sel.dataset.map] = sel.value; if (draft) draft._map = Object.assign(draft._map || {}, { [sel.dataset.map]: sel.value }); });
       const save = $app.querySelector('#tSave');
       if (save) save.onclick = async () => {
         save.disabled = true; save.textContent = 'Зберігаємо…';
@@ -2283,13 +2544,18 @@
         S.entries.forEach(e => { if (!(e.t || []).includes(n)) return; const id = S.map[e.s + '|' + e.g]; if (!id) return; const sj = catalogSubject(id); if (!sj) return;
           const k = classInfo(e.g); const full = k && k.subjects.find(x => x.id === id); (full ? subjectIds(full) : [id]).forEach(x => ids.add(x)); cls.add(+e.g); });
         return { subjects: [...ids], classes: [...cls].sort((a, b) => a - b) }; };
-      tBox.innerHTML = `<div class="card pad" style="margin-top:16px"><h3 class="rs-h">👩‍🏫 Вчителі з розкладу</h3>
-        <p class="muted" style="font-weight:700;margin-bottom:10px">«Синхронізувати» — призначити вчителю на порталі ті самі предмети й класи, що в розкладі. Відсутнього вчителя можна створити: потрібна лише його пошта.</p>
-        <div class="table-wrap"><table class="tbl"><thead><tr><th>У розкладі</th><th>Предмети (на порталі)</th><th>На порталі</th><th></th></tr></thead><tbody>
-        ${(S.teachers || []).map((n, i) => { const t = portalByName(n), sj = subjOf(n);
-          return `<tr><td style="font-weight:800">${esc(n)}</td><td>${teacherSubjectTags(sj.subjects)}</td>
-            <td>${t ? `${esc(t.name)}${t.pending ? ' <span class="tag">заявка</span>' : ''}${t.disabled ? ' <span class="tag">вимкнено</span>' : ''}` : '<span class="muted">немає</span>'}</td>
-            <td style="white-space:nowrap">${t ? `<button class="btn light sm" data-sync="${i}">🔄 Синхронізувати</button>` : `<button class="btn brand sm" data-new="${i}">＋ Створити</button>`}</td></tr>`; }).join('')}</tbody></table></div></div>`;
+      const tShow = (S.teachers || []).map((n, i) => ({ n, i })).filter(({ n }) => !sf.t || sf.t === n)
+        .filter(({ n }) => !sf.g && !sf.s || S.entries.some(e => (e.t || []).includes(n) && (!sf.g || String(e.g) === String(sf.g)) && (!sf.s || e.s === sf.s)));
+      const short = ids => { const by = {}; ids.forEach(id => { const sj = catalogSubject(id); if (!sj || sj.archived) return; (by[sj.name] = by[sj.name] || new Set()).add(sj.cls); });
+        return Object.entries(by).sort((a, b) => a[0].localeCompare(b[0], 'uk')).map(([nm, cs]) => `<span class="st-chip">${esc(nm)} <b>${[...cs].sort((a, b) => a - b).join(', ')}</b></span>`).join('') || '<span class="muted">—</span>'; };
+      tBox.innerHTML = `<div class="card pad" style="margin-top:16px"><h3 class="rs-h">👩‍🏫 Вчителі з розкладу <small class="muted">· ${tShow.length}${tShow.length !== (S.teachers || []).length ? ' з ' + (S.teachers || []).length : ''}</small></h3>
+        <p class="muted" style="font-weight:700;margin-bottom:8px;font-size:13px">🔄 — призначити вчителю на порталі ті самі предмети й класи, що в розкладі. ＋ — створити обліковий запис (потрібна лише пошта). Біля предмета — класи.</p>
+        <div class="table-wrap" style="max-height:60vh"><table class="tbl tbl-compact sched-tch"><thead><tr><th>Вчитель</th><th>Предмети · класи</th><th class="c">Портал</th><th></th></tr></thead><tbody>
+        ${tShow.map(({ n, i }) => { const t = portalByName(n), sj = subjOf(n);
+          return `<tr><td class="st-n">${esc(n)}</td><td>${short(sj.subjects)}</td>
+            <td class="c" title="${t ? esc(t.name) : 'Немає на порталі'}">${t ? (t.pending ? '⏳' : t.disabled ? '⛔' : '✅') : '—'}</td>
+            <td class="c" style="white-space:nowrap">${t ? `<button class="icon-btn" data-sync="${i}" title="Синхронізувати предмети за розкладом">🔄</button>` : `<button class="btn brand sm" data-new="${i}" title="Створити вчителя на порталі">＋</button>`}</td></tr>`; }).join('') || '<tr><td colspan="4" class="empty">Нікого не знайдено</td></tr>'}</tbody></table></div>
+        <p class="muted" style="font-size:12px;font-weight:700;margin-top:6px">✅ — є на порталі · ⏳ — заявка · ⛔ — вимкнено · — — немає</p></div>`;
       tBox.querySelectorAll('[data-sync]').forEach(b => b.onclick = async () => {
         const n = S.teachers[+b.dataset.sync], t = portalByName(n), sj = subjOf(n);
         const data = Object.assign({ schedName: n }, sj, t.pending ? { pending: false, disabled: false } : {});
