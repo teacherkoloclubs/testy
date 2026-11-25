@@ -457,6 +457,7 @@
       if (p[0] === 'class') return await renderClass(+p[1]);
       if (p[0] === 'course') return await renderCourse(p[1]);
       if (p[0] === 'slides') return await renderSlides(p[1], p[2]);
+      if (p[0] === 'plan') return await renderPlan(p[1], p[2]);
       if (p[0] === 'test') return await renderTest(p[1], p[2], p[3]);
       if (p[0] === 'units') return await renderUnits(p[1]);
       if (p[0] === 'kr') return await renderKr(p[1], p[2], p[3]);
@@ -587,6 +588,7 @@
     const course = await loadCourse(id);
     if (course.primary) document.body.classList.add('theme-primary');
     const sims = await loadSims(id);
+    const plans = await loadPlans(id, course);
     const results = user.role === 'student' ? (await Store.myResults()).filter(r => r.course === id) : [];
     const bm = bestMap(results);
     const lessons = course.sections.flatMap(s => s.lessons);
@@ -633,6 +635,7 @@
                 <div class="lesson-actions">
                   <a class="btn light sm" href="#/slides/${id}/${l.id}">🎞 Презентація</a>
                   ${window.Games && Games.has(id, l.id) ? `<a class="btn light sm game-btn" href="#/games/${id}/${l.id}">🎮 Ігри</a>` : ''}
+                  ${plans[l.id] ? (isStaff() ? `<a class="btn light sm" href="#/plan/${id}/${l.id}" title="План уроку й домашнє завдання">📋 План</a>` : (plans[l.id].hw ? `<a class="btn light sm" href="#/plan/${id}/${l.id}" title="Творче домашнє завдання">🏠 Д/з</a>` : '')) : ''}
                   ${testBtn(l.id, `#/test/${id}/lesson/${l.id}`, '📝 Тест')}
                   ${user.role === 'student' ? g(l.id) : ''}
                 </div>
@@ -672,6 +675,7 @@
     if (!lesson) throw new Error('Урок не знайдено');
     /* анімована теорія за підручником: data/courses/<курс>/t<розділ>.js (якщо є) */
     try { await loadScript(`data/courses/${id}/t${lesson.section.n}.js`); if (Slides.applyTheory) Slides.applyTheory(course); } catch (e) { /* теорії для розділу ще немає */ }
+    try { await loadScript(`data/courses/${id}/p${lesson.section.n}.js`); if (Slides.applyPlans) Slides.applyPlans(course); } catch (e) { /* плану ще немає */ }
     Protect.set(true, user.role === 'student');
     view = Slides.run($app, lesson, {
       color: meta.color,
@@ -680,6 +684,35 @@
       source: sourceNote(course, lesson.pages),
       sourceText: bookLine(course) + (lesson.pages ? ', ' + esc(pg(lesson.pages)) : '')
     });
+  }
+
+  /* ---------------- план уроку (вчитель) і творче д/з ---------------- */
+  const richText = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/==(.+?)==/g, '<mark>$1</mark>');
+  async function loadPlans(id, course) {
+    await Promise.all(course.sections.map(s => loadScript(`data/courses/${id}/p${s.n}.js`).catch(() => null)));
+    return (window.PLANS || {})[id] || {};
+  }
+  async function renderPlan(id, lid) {
+    const meta = catalogSubject(id);
+    if (!meta || (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) || !canCourse(meta.id)) { location.hash = '#/'; return; }
+    const course = await loadCourse(id);
+    if (course.primary) document.body.classList.add('theme-primary');
+    const lesson = course.sections.flatMap(s => s.lessons).find(l => l.id === lid);
+    if (!lesson) throw new Error('Урок не знайдено');
+    try { await loadScript(`data/courses/${id}/p${lesson.section.n}.js`); } catch (e) {}
+    const x = ((window.PLANS || {})[id] || {})[lid] || {};
+    const staff = isStaff(), key = `plan:${user.uid}:${id}:${lid}`;
+    let done = {}; try { done = JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) {}
+    const hw = x.hw ? `<div class="card plan-hw"><h2>${esc(x.hw.e || '🏠')} Домашнє завдання: ${esc(x.hw.t || '')}</h2>${(x.hw.p || []).map(t => `<p>${richText(t)}</p>`).join('')}${(x.hw.steps || []).length ? `<ol>${x.hw.steps.map(t => `<li>${richText(t)}</li>`).join('')}</ol>` : ''}</div>` : '<div class="empty"><span class="e">🏠</span>Домашнього завдання ще немає</div>';
+    const plan = staff && x.plan ? `<div class="card plan-card"><div class="plan-top"><h2>📋 План уроку — чек-лист</h2><span class="plan-prog"></span><button class="btn light sm" id="plReset">Скинути позначки</button></div>${x.plan.goal ? `<p class="plan-goal"><b>Мета:</b> ${richText(x.plan.goal)}</p>` : ''}<ul class="plan-list">${(x.plan.items || []).map((t, i) => `<li><label><input type="checkbox" data-i="${i}" ${done[i] ? 'checked' : ''}><span>${richText(t)}</span></label></li>`).join('')}</ul></div>` : '';
+    $app.innerHTML = `<div class="crumbs"><a href="#/course/${id}">${esc(meta.name)} · ${meta.cls} клас</a><span>›</span><span>${esc(lesson.section.title)}</span></div>
+      <div class="page-head"><div><h1>${staff ? '📋 План уроку' : '🏠 Домашнє завдання'}: ${esc(lesson.emoji || '')} ${esc(lesson.title)}</h1><p>Урок ${lesson.n}${lesson.pages ? ' · ' + esc(pg(lesson.pages)) : ''}</p></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap"><a class="btn light" href="#/slides/${id}/${lid}">🎞 Презентація</a><a class="btn light" href="#/test/${id}/lesson/${lid}">📝 Тест</a>${staff ? '<button class="btn light" onclick="window.print()">🖨 Друк</button>' : ''}</div></div>
+      ${plan}${hw}`;
+    const prog = () => { const all = $app.querySelectorAll('.plan-list input'), n = [...all].filter(c => c.checked).length; const el = $app.querySelector('.plan-prog'); if (el) el.textContent = `виконано ${n} з ${all.length}`; };
+    $app.querySelectorAll('.plan-list input').forEach(c => c.onchange = () => { done[c.dataset.i] = c.checked; try { localStorage.setItem(key, JSON.stringify(done)); } catch (e) {} prog(); });
+    const rb = $app.querySelector('#plReset'); if (rb) rb.onclick = () => { done = {}; try { localStorage.removeItem(key); } catch (e) {} $app.querySelectorAll('.plan-list input').forEach(c => c.checked = false); prog(); };
+    prog();
   }
 
   /* ---------------- ігри уроку ---------------- */

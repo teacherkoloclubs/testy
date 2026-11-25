@@ -577,3 +577,17 @@ body { background-color: #F7F9FD; }
 .sim-tile-n { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: #fff; font-weight: 900; background: var(--sc, #4F46E5); }
 .sim-tile small { color: var(--muted); font-weight: 600; }
 @media (max-width: 860px) { .sim-wrap { grid-template-columns: 1fr; } .sim-panel { position: static; } .sim-task-a, .sim-task-r { margin-left: 0; } }
+
+/* ===== План уроку і творче д/з ===== */
+.plan-card, .plan-hw { padding: 20px 24px; margin-bottom: 16px; }
+.plan-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.plan-top h2 { font-size: 20px; flex: 1; margin: 0; }
+.plan-prog { font-weight: 800; color: var(--brand, #4F46E5); }
+.plan-goal { background: #EEF0FF; border-radius: 12px; padding: 10px 14px; line-height: 1.5; }
+.plan-list { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 6px; }
+.plan-list label { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: #FAFAFF; border: 1px solid #ECEAFB; cursor: pointer; line-height: 1.5; }
+.plan-list input { width: 20px; height: 20px; flex: none; margin-top: 2px; accent-color: var(--brand, #4F46E5); }
+.plan-list input:checked + span { color: var(--muted); text-decoration: line-through; }
+.plan-hw { border-left: 6px solid #F59E0B; background: linear-gradient(90deg, #FFFBEB, #fff); }
+.plan-hw h2 { font-size: 20px; margin: 0 0 8px; } .plan-hw p, .plan-hw li { line-height: 1.6; } .plan-hw ol { padding-left: 22px; }
+@media print { .topbar, .crumbs, .page-head .btn, #plReset { display: none !important; } .plan-list label { background: none; border: 0; padding: 4px 0; } }

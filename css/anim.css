@@ -123,3 +123,4 @@
   .t-term { font-size: 1.6em; } .t-f { font-size: 1.7em; }
 }
 @media (max-width:720px){ .t-slide.anim .t-arrow.an{animation-name:tFade} }
+.t-code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; background: #0F172A; color: #E2E8F0; padding: 1px 6px; border-radius: 6px; font-size: .92em; white-space: pre-wrap; }

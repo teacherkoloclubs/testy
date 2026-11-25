@@ -4,7 +4,9 @@
 (function () {
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
   /* **жирний** у тексті слайда */
-  function rich(s) { return esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'); }
+  function rich(s) { /* `код` — моноширинний фрагмент, решта — **жирний** */
+    return String(s == null ? '' : s).split('`').map((p, i) => i % 2 ? `<code class="t-code">${esc(p)}</code>` : esc(p).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')).join('');
+  }
 
   /* детерміноване перемішування (щоб порядок не збігався з правильним) */
   function shuffled(arr, seed) {
@@ -115,7 +117,7 @@
      Кожен елемент з класом .an з’являється по черзі (--d — порядковий номер).
      s.say — пояснення «від учителя» (показується в бульбашці й може озвучуватися). */
   function rt(s) { /* rich + індекси/степені: x^{2}, v_{0}, ==виділення== */
-    return rich(s).replace(/\^\{(.+?)\}/g, '<sup>$1</sup>').replace(/_\{(.+?)\}/g, '<sub>$1</sub>').replace(/==(.+?)==/g, '<mark>$1</mark>');
+    return String(s == null ? '' : s).split('`').map((p, i) => i % 2 ? `<code class="t-code">${esc(p)}</code>` : rich(p).replace(/\^\{(.+?)\}/g, '<sup>$1</sup>').replace(/_\{(.+?)\}/g, '<sub>$1</sub>').replace(/==(.+?)==/g, '<mark>$1</mark>')).join('');
   }
   function T_TYPES_has(t) { return /^t[a-z]+$/.test(t || '') && T_RENDER[t]; }
   const sayBox = s => s.say ? `<div class="t-say an" style="--d:${s._n || 6}"><span class="t-say-ava">🧑‍🏫</span><span class="t-say-txt">${rt(s.say)}</span></div>` : '';
@@ -123,7 +125,7 @@
   const T_RENDER = {
     tx(s) { /* пояснення: вступ, пункти, примітка */
       let d = 1;
-      const lead = s.lead ? `<p class="t-lead an" style="--d:${d++}">${rt(s.lead)}</p>` : '';
+      const lead = [].concat(s.lead || []).map(x => `<p class="t-lead an" style="--d:${d++}">${rt(x)}</p>`).join('');
       const pts = (s.pts || []).map(x => `<li class="an" style="--d:${d++}">${rt(x)}</li>`).join('');
       const note = s.note ? `<div class="t-note an" style="--d:${d++}">💡 ${rt(s.note)}</div>` : '';
       s._n = d;
@@ -168,6 +170,12 @@
       let d = 1; const it = (s.items || []).map(x => `<div class="t-tl an" style="--d:${d++}"><b>${rt(x[0])}</b><span>${rt(x[1])}</span></div>`).join('');
       s._n = d + 1;
       return `<div class="slide t-slide t-time">${tHead(s, s.label || '🕰 Історія')}<div class="t-line"><i class="an" style="--d:1"></i>${it}</div>${s.note ? `<div class="t-note an" style="--d:${d}">💡 ${rt(s.note)}</div>` : ''}${sayBox(s)}</div>`;
+    },
+    thw(s) { /* творче домашнє завдання */
+      let d = 2; const ps = (s.p || []).map(x => `<p class="t-lead an" style="--d:${d++}">${rt(x)}</p>`).join('');
+      const st = (s.steps || []).map((x, k) => `<li class="an" style="--d:${d++}"><i>${k + 1}</i><span>${rt(x)}</span></li>`).join('');
+      s._n = d + 1;
+      return `<div class="slide t-slide t-steps t-hw">${tHead(Object.assign({}, s, { h: (s.e || '🏠') + ' ' + (s.t || '') }), '🏠 Домашнє завдання (творче)')}${ps}${st ? `<ol class="t-stl">${st}</ol>` : ''}</div>`;
     },
     tmap(s) { /* карта знань: центр і гілки */
       const n = (s.items || []).length; let d = 2;
@@ -496,5 +504,14 @@
     }));
   }
 
-  window.Slides = { run, applyExt, applyTheory };
+  /* План і творче д/з: data/courses/<курс>/p<розділ>.js → window.PLANS[курс][урок] = { plan, hw }.
+     Домашнє завдання стає останнім слайдом презентації. */
+  function applyPlans(course) {
+    const pl = (window.PLANS || {})[course.id]; if (!pl) return;
+    course.sections.forEach(sec => sec.lessons.forEach(l => {
+      const x = pl[l.id]; if (!x || !x.hw || l._hw) return;
+      l.slides = (l.slides || []).concat([Object.assign({ type: 'thw' }, x.hw)]); l._hw = true;
+    }));
+  }
+  window.Slides = { run, applyExt, applyTheory, applyPlans };
 })();
