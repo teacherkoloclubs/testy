@@ -50,7 +50,8 @@ window.CATALOG = [
     { id: 'physics9', name: 'Фізика', icon: '🔭', ready: true },
     { id: 'business9', name: 'Підприємництво', icon: '💼', ready: true },
     { id: 'histua9', name: 'Історія України', icon: '🇺🇦', ready: true },
-    { id: 'histw9', name: 'Всесвітня історія', icon: '🏭', ready: true }
+    { id: 'histw9', name: 'Всесвітня історія', icon: '🏭', ready: true },
+    { id: 'geo9', name: 'Географія', icon: '🌐', ready: true }
   ]}
 ];
 
@@ -81,5 +82,6 @@ window.AVAILABLE_COURSES = [
   { id: 'histw9', subject: 'Всесвітня історія', title: 'Всесвітня історія, 9 клас — О. Гісем та ін., Видавництво «Ранок», 2026' },
   { id: 'geo6', subject: 'Географія', title: 'Географія, 6 клас — С. Запотоцький та ін., Астон, 2023' },
   { id: 'geo7', subject: 'Географія', title: 'Географія, 7 клас — В. Бойко та ін., Перун, 2024' },
-  { id: 'geo8', subject: 'Географія', title: 'Географія, 8 клас — В. Бойко та ін., Перун, 2025' }
+  { id: 'geo8', subject: 'Географія', title: 'Географія, 8 клас — В. Бойко та ін., Перун, 2025' },
+  { id: 'geo9', subject: 'Географія', title: 'Географія, 9 клас — С. Запотоцький та ін., Астон, 2026' }
 ];
