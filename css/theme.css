@@ -591,3 +591,39 @@ body { background-color: #F7F9FD; }
 .plan-hw { border-left: 6px solid #F59E0B; background: linear-gradient(90deg, #FFFBEB, #fff); }
 .plan-hw h2 { font-size: 20px; margin: 0 0 8px; } .plan-hw p, .plan-hw li { line-height: 1.6; } .plan-hw ol { padding-left: 22px; }
 @media print { .topbar, .crumbs, .page-head .btn, #plReset { display: none !important; } .plan-list label { background: none; border: 0; padding: 4px 0; } }
+
+/* ---- журнал: оцінки за урок, середній за параграф, друк ---- */
+.j-print-only { display: none; }
+.j-mk-tbl th.j-ph { border-left: 2px solid var(--line); }
+.j-mk-tbl td.j-t { border-left: 2px solid var(--line); }
+.j-mk-tbl th.j-sub { font-size: 10.5px; color: #8A93A8; font-weight: 800; padding: 2px !important; }
+.j-mk-tbl td.j-avg, .j-mk-tbl th.j-avg { background: #FAFAFF; }
+.j-mk { border: 1px dashed #C7CBE0; cursor: pointer; font-family: inherit; }
+.j-mk.none { background: #fff; color: #A5ABC6; }
+.j-mk:not([disabled]):hover { border-color: var(--brand); color: var(--brand); }
+.j-mk[disabled] { cursor: default; border-style: solid; }
+.j-pa { display: inline-block; min-width: 24px; padding: 2px 4px; border-radius: 6px; font-size: 12.5px; }
+.j-pa.none { color: #C9C6DD; }
+.mk-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 8px; }
+.mk-v { height: 44px; border: 2px solid transparent; cursor: pointer; font-size: 17px; font-family: inherit; }
+.mk-v.on { border-color: var(--ink); }
+.mk-v:hover { transform: translateY(-1px); border-color: var(--brand); }
+@media (max-width: 720px) { .j-mk-tbl { table-layout: auto !important; width: auto !important; } }
+
+/* ---- інструкція з користування ---- */
+.guide-toc { margin-bottom: 16px; }
+.guide-toc ol { margin: 8px 0 0 20px; columns: 2; column-gap: 28px; font-weight: 700; }
+.guide-toc li { margin: 4px 0; break-inside: avoid; }
+.guide-toc a { color: var(--brand); text-decoration: none; }
+.guide { display: grid; gap: 14px; }
+.guide-sec { scroll-margin-top: 90px; }
+.guide-sec h2 { display: flex; align-items: center; gap: 10px; font-size: 19px; margin: 0 0 6px; }
+.guide-n { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 15px; flex: none; }
+.guide-intro { color: var(--ink-2); font-weight: 600; margin: 0 0 8px; }
+.guide-steps { margin: 0 0 0 22px; padding: 0; line-height: 1.55; }
+.guide-steps li { margin: 6px 0; padding-left: 4px; }
+.guide-steps li::marker { color: var(--brand); font-weight: 900; }
+.guide-steps code { background: #EEF0FF; padding: 1px 6px; border-radius: 6px; }
+.guide-tips { margin-top: 10px; padding: 10px 14px; border-radius: 12px; background: #FFF8E6; font-size: 14px; font-weight: 600; color: #6B4E00; }
+.guide-tips p { margin: 3px 0; }
+@media (max-width: 720px) { .guide-toc ol { columns: 1; } }

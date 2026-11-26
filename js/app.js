@@ -95,20 +95,22 @@
   /* id курсів (разом з архівними виданнями), доступних вчителю */
   /* курс доступний вчителю, якщо в його профілі є будь-який id цього предмета (ключ, курс або архівне видання):
      після підключення курсу до предмета id предмета змінюється, а в профілі вчителя може лишатися старий ключ */
-  const canCourse = id => !isTeacher() || (user.subjects || []).includes(id)
-    || CATALOG.some(k => k.subjects.some(s => subjectIds(s).includes(id) && canSubject(s)));
+  /* прихований клас бачить лише адміністратор (учні й вчителі — ні) */
+  const hiddenFor = k => !!(k && k.hidden && user && user.role !== 'admin');
+  const canCourse = id => !isTeacher() || (!CATALOG.some(k => k.hidden && k.subjects.some(s => subjectIds(s).includes(id)))
+    && ((user.subjects || []).includes(id) || CATALOG.some(k => k.subjects.some(s => subjectIds(s).includes(id) && canSubject(s)))));
   /* доповнює список id вчителя всіма id його предметів (для правил бази); null — змін немає */
   const healSubjects = list => { const have = new Set(list || []), add = new Set(have);
     CATALOG.forEach(k => k.subjects.forEach(s => { const ids = subjectIds(s); if (ids.some(x => have.has(x))) ids.forEach(x => add.add(x)); }));
     return add.size > have.size ? [...add] : null; };
   const canSubject = s => !isTeacher() || [s.id, s.key, s.course].concat((s.archive || []).map(a => a.course)).some(x => x && user.subjects.includes(x));
-  const visibleSubjects = k => (k.hidden && user && user.role === 'student') ? [] : k.subjects.filter(s => !(s.hidden && user && user.role === 'student') && canSubject(s))
+  const visibleSubjects = k => hiddenFor(k) ? [] : k.subjects.filter(s => !(s.hidden && user && user.role === 'student') && canSubject(s))
     .slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'uk'));
   /* номер параграфа уроку (з індексу уроків) і назва спроби з номером: «§ 5 · Тест: …» */
   const lessonNo = (course, lid) => { const ix = (window.LESSON_INDEX || {})[course]; const l = ix && ix.l.find(x => x[0] === lid); return l ? l[1] : null; };
   const resTitle = r => { const n = r.kind === 'lesson' ? lessonNo(r.course, r.testId) : null; return (n != null ? '§ ' + n + ' · ' : '') + (r.title || ''); };
   /* класи, які бачить користувач: адміністратор — усі, вчитель — де є його предмети */
-  const myClasses = () => isTeacher() ? CATALOG.filter(k => visibleSubjects(k).length || (user.classes || []).includes(k.cls)) : CATALOG;
+  const myClasses = () => isTeacher() ? CATALOG.filter(k => !hiddenFor(k) && (visibleSubjects(k).length || (user.classes || []).includes(k.cls))) : CATALOG;
   const roleLabel = () => isAdmin() ? 'Адміністратор' : isTeacher() ? 'Вчитель' : user.role === 'pending' ? 'Заявка вчителя' : user.cls + ' клас';
   /* id для збереження в профілі вчителя: ключ, чинний курс і архівні видання предмета */
   const subjectIds = s => [...new Set([s.id, s.key, s.course].concat((s.archive || []).map(a => a.course)).filter(Boolean))];
@@ -167,9 +169,9 @@
     if (!user) return;
     const links = isAdmin()
       ? [['#/', 'Класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/teacher/teachers', 'Вчителі'], ['#/teacher/subjects', 'Предмети'], ['#/teacher/schedule', 'Розклад'], ['#/chat', '💬 Чат'], ['#/help', '❓']]
-      : isTeacher() ? [['#/', 'Мої класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/chat', '💬 Чат'], ['#/help', '❓ Довідка']]
+      : isTeacher() ? [['#/', 'Мої класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/chat', '💬 Чат'], ['#/help', '📖 Інструкція']]
       : user.role === 'pending' ? []
-      : [['#/', 'Мої предмети'], ['#/my', 'Мої результати'], ['#/chat', '💬 Чат'], ['#/help', '❓ Довідка']];
+      : [['#/', 'Мої предмети'], ['#/my', 'Мої результати'], ['#/chat', '💬 Чат'], ['#/help', '📖 Інструкція']];
     const h = location.hash || '#/';
     document.getElementById('topnav').innerHTML = links.map(([href, t]) =>
       `<a href="${href}" class="${(href === '#/' ? (h === '#/' || h.startsWith('#/class') || h.startsWith('#/course')) : h.startsWith(href)) ? 'active' : ''}">${t}</a>`).join('');
@@ -503,36 +505,119 @@
   function renderHelp(tab) {
     const roleTab = isStaff() ? 'teacher' : 'student';
     tab = tab === 'teacher' && isStaff() ? 'teacher' : tab === 'student' ? 'student' : roleTab;
-    const card = (ico, title, items) => `<div class="card pad help-card"><h3><span>${ico}</span>${title}</h3><ul>${items.map(x => `<li>${x}</li>`).join('')}</ul></div>`;
+    /* інструкція: розділ = { id, ico, title, intro, steps (нумеровані кроки), tips (поради) } */
+    const sec = (id, ico, title, intro, steps, tips) => ({ id, ico, title, intro, steps: steps || [], tips: tips || [] });
     const student = [
-      card('📚', 'Мої предмети', ['Обери предмет — побачиш розділи й параграфи. Номер <b>§</b> ліворуч допомагає знайти потрібний параграф, як у підручнику.',
-        '<b>🎞 Презентація</b> — теорія параграфа зі схемами, прикладами й запитаннями для самоперевірки. Гортай стрілками або свайпом.',
-        '<b>🏠 Д/з</b> — творче домашнє завдання до параграфа.', '<b>🎮 Ігри</b> — повторення теми в ігровій формі (не впливає на оцінку).']),
-      card('📝', 'Тести', ['Тест за параграф — 12 питань, на кожне є час. Відповідай уважно: вийти з вікна тесту — погана ідея, вчитель це бачить.',
-        `Тест зараховується від <b>${C.passScore}</b> балів. Зарахований тест закривається 🔒 — повторно його пройти не можна (лише якщо вчитель дозволить).`,
-        '<b>🏁 Підсумковий за розділ</b> і <b>🏆 річний</b> — збирають питання з усіх параграфів.', 'Позначка <b>✍️</b> у результатах — оцінку вніс учитель (наприклад, за роботу на уроці).']),
-      card('🧪', 'Симуляції та лабораторні', ['<b>Симуляції</b> — інтерактивні моделі до розділів: змінюй параметри й спостерігай.',
-        '<b>🔬 Лабораторні роботи</b> (фізика 7–9) — віртуальні досліди за підручником: проводиш вимірювання, заповнюєш таблицю, робиш висновок. Результат можна показати вчителю.']),
-      card('📊', 'Мої результати', ['Оцінки з усіх предметів, середній бал і прогрес.', 'Список «Що пройти» нагадує про тести за уроки, що вже минули за розкладом ⏰.']),
-      card('💬', 'Чат', ['Пиши вчителю особисто, якщо щось незрозуміло, або спілкуйся в чаті класу.',
-        'Можна додати <b>скріншот</b>: кнопка 📎 або вставка <b>Ctrl+V</b>. Повідомлення зберігаються місяць.', 'Будь ввічливим — чат бачить учитель.'])
+      sec('vhid', '🔑', 'Вхід на портал', 'Логін і пароль тобі видає вчитель (картка з даними для входу).', [
+        'Відкрий сайт порталу в браузері на комп’ютері, планшеті чи телефоні.',
+        'Введи <b>логін</b> (наприклад, <code>7ivanenko12</code>) і <b>пароль</b> з картки. Пошта не потрібна.',
+        'Натисни <b>«Увійти»</b>. Відкриється сторінка твого класу з предметами.',
+        'Щоб змінити пароль, натисни <b>🔑 Пароль</b> угорі сторінки. Запам’ятай новий пароль!'],
+        ['Забув пароль — звернися до вчителя: він може видати новий.', 'Не повідомляй свій пароль іншим учням.', 'Після уроку на шкільному комп’ютері натисни <b>«Вийти»</b>.']),
+      sec('predmety', '📚', 'Предмети та параграфи', 'На головній сторінці — предмети твого класу.', [
+        'Обери предмет — відкриється список розділів і параграфів, як у підручнику.',
+        'Біля параграфа стоїть позначка <b>✅ Виконано</b> або <b>⏳ Не виконано</b> та дата уроку за розкладом 📅.',
+        'Угорі сторінки предмета — смужка прогресу і кнопка <b>«Наступний тест»</b>.'],
+        ['Позначка «урок уже був» нагадує, що тест за цей параграф варто пройти якнайшвидше.']),
+      sec('prez', '🎞', 'Презентація до параграфа', 'Теорія параграфа зі схемами, прикладами й інтерактивними завданнями.', [
+        'Біля параграфа натисни <b>🎞 Презентація</b>.',
+        'Гортай слайди стрілками ← → на екрані, клавіатурою або свайпом на телефоні.',
+        'Виконуй вправи на слайдах (правда/міф, відповідності, порядок) — вони допомагають підготуватися до тесту.',
+        'Наприкінці — запитання для самоперевірки й посилання на тест.'],
+        ['Вправи в презентації не впливають на оцінку — сміливо пробуй.']),
+      sec('test', '📝', 'Тести', 'Тест за параграф — 12 питань, за розділ — 24, річний — 36.', [
+        'Натисни <b>📝 Тест</b> біля параграфа (або <b>«Почати»</b> біля підсумкового тесту).',
+        'Уважно читай запитання: у деяких одна правильна відповідь, у деяких — кілька (це написано під запитанням).',
+        'На кожне запитання відведено час — стеж за таймером.',
+        'Після останнього запитання побачиш оцінку та правильні відповіді.',
+        `Тест <b>зараховано</b>, якщо оцінка не нижча за <b>${C.passScore}</b>. Зарахований тест закривається 🔒.`],
+        ['Не виходь з вікна тесту й не перемикай вкладки — вчитель бачить кількість виходів.', 'Якщо тест не зараховано, його можна пройти ще раз.', 'Перескласти зарахований тест можна лише з дозволу вчителя.']),
+      sec('dz', '🏠', 'Домашнє завдання та ігри', '', [
+        'Кнопка <b>🏠 Д/з</b> біля параграфа відкриває творче домашнє завдання.',
+        'Кнопка <b>🎮 Ігри</b> (у початковій школі) — повторення теми в ігровій формі.'], []),
+      sec('sim', '🧪', 'Симуляції та лабораторні роботи', 'Інтерактивні моделі й віртуальні досліди до розділів.', [
+        'Відкрий <b>🧪 Симуляцію</b> на сторінці предмета — змінюй параметри й спостерігай, що відбувається.',
+        'Виконай завдання під моделлю й перевір відповідь.',
+        'У <b>🔬 Лабораторній роботі</b> прочитай мету, обладнання й хід роботи.',
+        'Проведи досліди на віртуальному стенді й натискай <b>«Записати в таблицю»</b>.',
+        'Дай відповіді на підсумкові запитання та напиши висновок.'],
+        ['Лабораторну можна показати вчителю на екрані або зберегти.']),
+      sec('ocinky', '📊', 'Мої результати й оцінки', 'Усі твої оцінки в одному місці.', [
+        'Відкрий <b>«Мої результати»</b> у верхньому меню.',
+        'Переглянь оцінки за тести, середній бал і прогрес з кожного предмета.',
+        'Позначка <b>✍️</b> — оцінку поставив учитель: за роботу на уроці або за тест, виконаний на папері.',
+        'Розділ <b>«Що пройти»</b> нагадує про тести за уроки, що вже минули ⏰.'],
+        ['Середній бал за параграф рахується з оцінки за тест і оцінки за урок.']),
+      sec('chat', '💬', 'Чат з учителем', 'Запитай учителя, якщо щось незрозуміло.', [
+        'Відкрий <b>💬 Чат</b> і обери предмет — це особиста розмова з учителем.',
+        'Або обери <b>чат класу</b>, щоб спілкуватися з учителем і однокласниками.',
+        'Напиши повідомлення й натисни «Надіслати». Скріншот додай кнопкою 📎 або <b>Ctrl+V</b>.'],
+        ['Будь ввічливим: чат бачить учитель.', 'Повідомлення зберігаються місяць.'])
     ];
     const teacher = [
-      card('🏫', 'Класи й предмети', ['Предмети в кожному класі впорядковано за алфавітом. Біля кожного уроку — номер параграфа <b>§</b>.',
-        '<b>📋 План</b> — план уроку для вчителя: мета, чек-лист етапів із хронометражем, посилання на презентацію, симуляцію й тест, творче д/з.',
-        '<b>🔬 Лабораторні роботи</b> з фізики — на сторінці курсу; їх можна демонструвати на уроці або давати учням.']),
-      card('📊', 'Результати', ['<b>Огляд</b> — активність, рівні досягнень, учні, що потребують уваги, найскладніші тести.',
-        '<b>Усі результати</b> — фільтри за класом (список предметів підлаштовується під клас), видом тесту, періодом. ✕ — видалити спробу, щоб учень міг пройти тест ще раз.',
-        '<b>За предметами</b> — оберіть предмет у списку: статистика за параграфами й рейтинг учнів. <b>За класами</b> — один клас або всі.',
-        '<b>✍️ Зарахувати вручну</b> — внести оцінку за тест, який учень уже виконав раніше (на папері, на уроці). Тест стане для учня зарахованим.', '<b>Журнал</b> — таблиця оцінок класу; експорт у CSV (Excel).']),
-      card('🧑‍🎓', 'Учні', ['Створення облікових записів, друк карток з логінами й паролями, переведення в наступний клас.', 'Учень входить за логіном — пошта не потрібна.']),
-      card('💬', 'Чат', ['Особисті розмови з учнями та групові чати класу.', '<b>🛡 Адміністратор</b> — окрема розмова з адміністратором порталу: питання про доступ, предмети, помилки.',
-        'Скріншоти — кнопкою 📎 або <b>Ctrl+V</b> у полі повідомлення.']),
-    ].concat(isAdmin() ? [card('⚙️', 'Лише для адміністратора', ['<b>Вчителі</b> — заявки, призначення предметів і класів. <b>Предмети</b> — назви, порядок, прив’язка матеріалів; можна приховати від учнів окремий предмет або весь клас.',
-      '<b>Розклад</b> — завантаження файлу «Шкільного розкладу»; фільтри за класом, предметом і вчителем; синхронізація предметів учителів.', '<b>💬 Чат → 🧑‍🏫 Вчителю</b> — написати будь-якому вчителю.'])] : []);
-    $app.innerHTML = `<div class="page-head"><div><h1>❓ Довідка</h1><p>Коротко про можливості порталу</p></div></div>
+      sec('t-start', '🔑', 'Початок роботи', 'Доступ до порталу видає адміністратор.', [
+        'Увійдіть за <b>поштою та паролем</b>. Якщо облікового запису немає — натисніть «👩‍🏫 Я вчитель — подати заявку» на сторінці входу й зачекайте підтвердження.',
+        'На головній сторінці <b>«Мої класи»</b> — класи й предмети, які вам призначено.',
+        'Змініть пароль кнопкою <b>🔑 Пароль</b>. Якщо забули пароль — скористайтеся відновленням на сторінці входу.'],
+        ['Якщо бракує предмета чи класу — напишіть адміністратору в <b>💬 Чат → 🛡 Адміністратор</b>.']),
+      sec('t-uchni', '🧑‍🎓', 'Учні: облікові записи', 'Учні входять за логіном і паролем, без пошти.', [
+        'Відкрийте <b>«Учні»</b> й оберіть клас.',
+        'Натисніть <b>＋ Додати учнів</b>, вставте список прізвищ та імен (кожен з нового рядка) і натисніть <b>«Створити облікові записи»</b>.',
+        'Портал створить логіни й паролі. Натисніть <b>🖨 Картки з логінами</b>, надрукуйте й роздайте картки учням.',
+        'Щоб змінити ім’я, видати новий пароль або видалити учня — скористайтеся кнопками в рядку учня.',
+        'Наприкінці року — <b>⬆️ Перевести в наступний клас</b>.'],
+        ['Збережіть надруковані картки — пароль учня потім можна лише скинути, а не переглянути.']),
+      sec('t-urok', '🏫', 'Підготовка до уроку', 'Усі матеріали — на сторінці предмета.', [
+        'Відкрийте клас → предмет. Біля кожного уроку — номер параграфа <b>§</b> за підручником.',
+        '<b>📋 План</b> — мета уроку, етапи з хронометражем, посилання на презентацію, симуляцію й тест, творче домашнє завдання.',
+        '<b>🎞 Презентація</b> — показуйте на уроці з проєктора; анімовані слайди з теорією та вправами.',
+        '<b>🧪 Симуляції</b> й <b>🔬 лабораторні роботи</b> — демонструйте на уроці або давайте учням для самостійної роботи.',
+        '<b>📝 Тест</b> — учні проходять його на уроці чи вдома; ви можете переглянути тест заздалегідь.'],
+        ['Дати уроків з’являються автоматично, якщо адміністратор завантажив розклад.']),
+      sec('t-results', '📊', 'Результати', 'Огляд успішності класів і учнів.', [
+        'Відкрийте <b>«Результати»</b>. Вкладка <b>«Огляд»</b> — активність, рівні досягнень, учні, що потребують уваги, найскладніші тести.',
+        '<b>«Усі результати»</b> — список спроб із фільтрами за класом, предметом, видом тесту та періодом.',
+        '<b>«За предметами»</b>, <b>«За класами»</b>, <b>«За учнями»</b> — статистика в різних розрізах.',
+        '<b>«Нагадування»</b> — хто не пройшов тести за минулі уроки.',
+        '<b>✍️ Зарахувати вручну</b> — внесіть оцінку за тест, виконаний на папері. Тест стане зарахованим.',
+        'Щоб учень міг перескласти тест — видаліть зараховану спробу (✕).'], []),
+      sec('t-journal', '📒', 'Журнал класу', 'Таблиця оцінок класу з предмета.', [
+        'Відкрийте <b>Результати → 📒 Журнал класу</b>, оберіть клас і предмет.',
+        '<b>«Огляд за розділами»</b> — середній бал за параграфи кожного розділу, підсумкові й річний тести.',
+        'Відкрийте вкладку <b>«Розділ N»</b>: для кожного параграфа (§ за підручником) три стовпці — <b>т</b> (тест), <b>у</b> (оцінка за урок), <b>сер</b> (середній за параграф).',
+        'Щоб поставити оцінку за урок, натисніть <b>＋</b> у стовпці «у» й оберіть бал від 1 до 12. Натисніть на оцінку ще раз, щоб змінити чи прибрати її.',
+        '<b>📄 PDF</b> — завантажити журнал у PDF; <b>🖨 Друк</b> — надрукувати. Орієнтація сторінки (книжкова чи альбомна) обирається автоматично за шириною таблиці.',
+        '<b>⬇️ CSV</b> — таблиця для Excel з усіма оцінками.'],
+        ['Оцінку за урок учень бачить на сторінці предмета (✍️) та в «Моїх результатах».', 'Натисніть на ім’я учня, щоб переглянути всі його спроби.']),
+      sec('t-chat', '💬', 'Чат', 'Спілкування з учнями та адміністратором.', [
+        'Відкрийте <b>💬 Чат</b>: особисті розмови з учнями згруповано за предметами.',
+        '<b>Чат класу</b> — повідомлення для всього класу (оголошення, домашнє завдання).',
+        '<b>🛡 Адміністратор</b> — окрема розмова з адміністратором порталу.',
+        'Скріншот додайте кнопкою 📎 або <b>Ctrl+V</b>; своє повідомлення можна редагувати чи видалити.'],
+        ['Повідомлення зберігаються місяць.'])
+    ].concat(isAdmin() ? [sec('t-admin', '⚙️', 'Лише для адміністратора', 'Налаштування порталу.', [
+      '<b>Вчителі</b> — підтвердження заявок, призначення предметів і класів, вимкнення доступу. Під час відкриття сторінки вчителям автоматично додається доступ до нових курсів їхніх предметів.',
+      '<b>Предмети за класами</b> — назви, значки, порядок, прив’язка матеріалів (у списку — лише підручники цього класу й предмета). Можна приховати предмет від учнів або <b>весь клас від учнів і вчителів</b>.',
+      '<b>Розклад</b> — завантаження файлу розкладу, фільтри, синхронізація предметів учителів (🔄) і створення облікових записів (＋).',
+      '<b>💬 Чат → 🧑‍🏫 Вчителю</b> — написати будь-якому вчителю.'], [])] : []);
+    const list = tab === 'teacher' ? teacher : student;
+    $app.innerHTML = `<div class="page-head"><div><h1>📖 Інструкція з користування</h1><p>${tab === 'teacher' ? 'Для вчителя' : 'Для учня'} — покроково про всі можливості порталу</p></div>
+        <div><button class="btn light" id="helpPrint">🖨 Надрукувати інструкцію</button></div></div>
       ${isStaff() ? `<nav class="rs-tabs"><a href="#/help/teacher" class="${tab === 'teacher' ? 'on' : ''}">🧑‍🏫 Для вчителя</a><a href="#/help/student" class="${tab === 'student' ? 'on' : ''}">🧑‍🎓 Для учня</a></nav>` : ''}
-      <div class="help-grid">${(tab === 'teacher' ? teacher : student).join('')}</div>`;
+      <div class="card pad guide-toc"><b>Зміст</b><ol>${list.map(x => `<li><a href="javascript:void(0)" data-go="${x.id}">${x.ico} ${x.title}</a></li>`).join('')}</ol></div>
+      <div class="guide">${list.map((x, i) => `<section class="card pad guide-sec" id="g-${x.id}">
+        <h2><span class="guide-n">${i + 1}</span>${x.ico} ${x.title}</h2>${x.intro ? `<p class="guide-intro">${x.intro}</p>` : ''}
+        <ol class="guide-steps">${x.steps.map(st => `<li>${st}</li>`).join('')}</ol>
+        ${x.tips.length ? `<div class="guide-tips">${x.tips.map(t => `<p>💡 ${t}</p>`).join('')}</div>` : ''}</section>`).join('')}</div>`;
+    $app.querySelectorAll('[data-go]').forEach(a => a.onclick = () => { const el = document.getElementById('g-' + a.dataset.go); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+    $app.querySelector('#helpPrint').onclick = () => {
+      const fr = document.createElement('iframe'); fr.style.cssText = 'position:fixed;width:0;height:0;border:0;right:0;bottom:0'; document.body.appendChild(fr);
+      const d = fr.contentWindow.document; d.open();
+      d.write(`<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8"><title>Інструкція</title><style>@page{size:A4 portrait;margin:14mm}body{font-family:Inter,Arial,sans-serif;color:#1F2340;font-size:12px;line-height:1.45}
+        h1{font-size:18px}h2{font-size:14px;margin:14px 0 4px;break-after:avoid}.guide-n,.guide-toc{display:none}ol{margin:4px 0 4px 18px;padding:0}li{margin:2px 0}.guide-tips p{margin:2px 0;color:#475569}code{background:#F1F5F9;padding:0 3px}section{break-inside:avoid}</style></head>
+        <body><h1>📖 Інструкція з користування порталом — ${tab === 'teacher' ? 'для вчителя' : 'для учня'}</h1>${$app.querySelector('.guide').innerHTML}</body></html>`);
+      d.close(); setTimeout(() => { fr.contentWindow.focus(); fr.contentWindow.print(); setTimeout(() => fr.remove(), 60000); }, 300);
+    };
   }
 
   /* ---------------- маршрутизатор ---------------- */
@@ -749,6 +834,7 @@
                   ${plans[l.id] ? (isStaff() ? `<a class="btn light sm" href="#/plan/${id}/${l.id}" title="План уроку й домашнє завдання">📋 План</a>` : (plans[l.id].hw ? `<a class="btn light sm" href="#/plan/${id}/${l.id}" title="Творче домашнє завдання">🏠 Д/з</a>` : '')) : ''}
                   ${testBtn(l.id, `#/test/${id}/lesson/${l.id}`, '📝 Тест')}
                   ${user.role === 'student' ? g(l.id) : ''}
+                  ${user.role === 'student' && bm['mark:' + l.id] && bm['mark:' + l.id].best != null ? `<span class="grade ${gradeClass(bm['mark:' + l.id].best)}" title="Оцінка за урок від учителя">✍️ ${bm['mark:' + l.id].best}</span>` : ''}
                 </div>
               </div>`).join('')}
             <div class="card lesson-row summary-row">
@@ -1422,7 +1508,7 @@
     $app.innerHTML = '<div class="loader"><span></span></div>';
     let students = await Store.listStudents();
     /* класи, з якими можна працювати: адміністратор — усі, вчитель — свої */
-    const clsList = isAdmin() ? CATALOG.map(k => k.cls) : (user.classes || []).slice().sort((a, b) => a - b);
+    const clsList = isAdmin() ? CATALOG.map(k => k.cls) : (user.classes || []).filter(c => !hiddenFor(classInfo(c))).sort((a, b) => a - b);
     if (!isAdmin() && ss.getItem('stFilter') !== 'all' && !clsList.includes(+ss.getItem('stFilter'))) ss.setItem('stFilter', 'all');
     const draw = () => {
       const f = ss.getItem('stFilter') || 'all';
@@ -1524,7 +1610,7 @@
   let RS = null;   // кеш даних сторінки «Результати»
   const DAY = 864e5;
   const LEVELS = [['Початковий', 1, 3, 'g-lo'], ['Середній', 4, 6, 'g-avg'], ['Достатній', 7, 9, 'g-mid'], ['Високий', 10, 12, 'g-hi']];
-  const KIND = { lesson: 'Урок', section: 'Розділ', final: 'Річний' };
+  const KIND = { lesson: 'Урок', section: 'Розділ', final: 'Річний', mark: '✍️ Оцінка за урок' };
   const pct = (a, b) => b ? Math.round(a / b * 100) : null;
   const ago = ms => { if (!ms) return 'ще не проходив'; const d = Math.floor((Date.now() - ms) / DAY); return d <= 0 ? 'сьогодні' : d === 1 ? 'вчора' : d + ' дн. тому'; };
 
@@ -1976,6 +2062,58 @@
     }, { wide: true });
   }
 
+  /* ---------- журнал: друк і PDF з автоматичною орієнтацією сторінки ---------- */
+  const PRINT_CSS = `*{box-sizing:border-box}body{font-family:Inter,Arial,sans-serif;color:#1F2340;margin:0;padding:0}
+    h1{font-size:15px;margin:0 0 4px}.meta{font-size:10.5px;color:#6B6F8E;margin:0 0 8px}
+    table{border-collapse:collapse;width:100%;font-size:10.5px}th,td{border:1px solid #CBD5E1;padding:3px 4px;text-align:center}
+    th{background:#F1F5F9;font-weight:800}td.nm,th.sticky-col{text-align:left;white-space:nowrap}
+    .cell,.j-pa{display:inline-block;min-width:20px;padding:1px 3px;border-radius:4px;font-weight:800}
+    .g-hi{background:#E6F6F0;color:#047857}.g-mid{background:#EAF2FF;color:#1D4ED8}.g-avg{background:#FEF5E3;color:#B45309}.g-lo{background:#FDEDED;color:#B91C1C}.none{color:#94A3B8}
+    .th-sub{display:block;font-size:8px;color:#6B7280;font-weight:600}.j-pair{display:inline-flex;gap:3px}
+    .j-sec-title{font-weight:800;font-size:12px;margin:0 0 6px}.j-legend{margin-top:8px;font-size:9.5px;columns:2;column-gap:18px}.j-legend span{display:block}.j-legend b{color:#4F46E5;margin-right:4px}
+    .j-avg{background:#FAFAFF}.j-print-only{display:none}`;
+  function journalDoc(el, title, landscape) {
+    const c = el.cloneNode(true);
+    c.querySelectorAll('a,button').forEach(x => { const sp = document.createElement('span'); sp.className = x.className; sp.textContent = x.textContent === '＋' ? '' : x.textContent; x.replaceWith(sp); });
+    c.querySelectorAll('.j-print-only').forEach(x => x.remove());
+    return `<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8"><title>${esc(title)}</title><style>@page{size:A4 ${landscape ? 'landscape' : 'portrait'};margin:10mm}${PRINT_CSS}</style></head>
+      <body><h1>${esc(title)}</h1><p class="meta">Сформовано ${new Date().toLocaleDateString('uk-UA')} · ${landscape ? 'альбомна' : 'книжкова'} орієнтація</p>${c.innerHTML}</body></html>`;
+  }
+  /* альбомна, якщо таблиця широка: багато стовпців або не вміщується в ширину книжкової сторінки */
+  function journalLandscape(el) {
+    const t = el.querySelector('table'); if (!t) return false;
+    const ncol = Math.max(0, ...[...t.rows].map(r => [...r.cells].reduce((a, c) => a + (c.colSpan || 1), 0)));
+    return ncol > 9 || t.scrollWidth > 760;
+  }
+  let H2P = null;
+  const loadHtml2pdf = () => H2P || (H2P = new Promise((ok, no) => {
+    if (window.html2pdf) return ok(window.html2pdf);
+    const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+    sc.onload = () => window.html2pdf ? ok(window.html2pdf) : no(new Error('PDF')); sc.onerror = () => { H2P = null; no(new Error('PDF')); }; document.head.appendChild(sc);
+  }));
+  async function journalExport(el, title, mode, fname) {
+    if (!el) return;
+    const landscape = journalLandscape(el), html = journalDoc(el, title, landscape);
+    const printIt = () => {
+      const fr = document.createElement('iframe'); fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'; document.body.appendChild(fr);
+      const d = fr.contentWindow.document; d.open(); d.write(html); d.close();
+      setTimeout(() => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { /* друк заблоковано */ } setTimeout(() => fr.remove(), 60000); }, 300);
+    };
+    if (mode === 'print') return printIt();
+    toast('Готуємо PDF (' + (landscape ? 'альбомна' : 'книжкова') + ' орієнтація)…');
+    try {
+      const h2p = await loadHtml2pdf();
+      const box = document.createElement('div'); box.style.cssText = `position:fixed;left:-10000px;top:0;width:${landscape ? 1080 : 760}px;background:#fff;padding:0`;
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      box.innerHTML = `<style>${PRINT_CSS}</style>` + doc.body.innerHTML; document.body.appendChild(box);
+      await h2p().set({ margin: 8, filename: fname || 'zhurnal.pdf', image: { type: 'jpeg', quality: 0.96 }, html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: landscape ? 'landscape' : 'portrait' }, pagebreak: { mode: ['css', 'legacy'], avoid: 'tr' } }).from(box).save();
+      box.remove();
+    } catch (e) {
+      toast('Бібліотеку PDF не завантажено — відкриваю друк: оберіть «Зберегти як PDF»');
+      printIt();
+    }
+  }
   async function renderJournal(clsArg, courseArg, tabsHtml) {
     const classes = myClasses().filter(c => visibleSubjects(c).length || isAdmin());
     const ready = classes.flatMap(k => visibleSubjects(k).filter(s => s.ready).map(s => ({ cls: k.cls, s })));
@@ -2004,20 +2142,28 @@
     const [course, students, results] = await Promise.all([loadCourse(subj.id), Store.listStudents(), Store.courseResults(subj.id)]);
     const list = students.filter(s => s.cls === cls).sort((a, b) => a.name.localeCompare(b.name, 'uk'));
     const lessons = course.sections.flatMap(s => s.lessons);
+    /* номер параграфа за підручником (з індексу уроків); якщо його немає — порядковий номер уроку */
+    const pn = l => { const n = lessonNo(subj.id, l.id); return n != null ? '§' + n : 'У' + l.n; };
+    const MK = l => 'mark:' + l.id;
+    const canMark = isAdmin() || canCourse(subj.id);
     const cols = [];
     course.sections.forEach(s => {
-      s.lessons.forEach(l => cols.push({ id: l.id, label: l.n + '. ' + l.title, short: 'У' + l.n, kind: 'lesson' }));
+      s.lessons.forEach(l => cols.push({ id: l.id, l, label: pn(l) + '. ' + l.title, short: pn(l), kind: 'lesson' }));
       cols.push({ id: 'section-' + s.n, label: 'Підсумковий: розділ ' + s.n, short: 'Р' + s.n, kind: 'section' });
     });
     cols.push({ id: 'final', label: 'Річний підсумковий', short: 'Рік', kind: 'final' });
     const byUser = {};
     results.forEach(r => (byUser[r.uid] = byUser[r.uid] || []).push(r));
+    const best = (bm, id) => bm[id] && bm[id].best != null ? bm[id].best : null;
+    /* середній бал за параграф: оцінка за тест і оцінка за урок (що є) */
+    const pAvg = (bm, l) => avg([best(bm, l.id), best(bm, MK(l))].filter(v => v != null));
 
     const rowsData = list.map(s => {
       const bm = bestMap(byUser[s.uid] || []);
-      const lb = lessons.map(l => bm[l.id] && bm[l.id].best).filter(v => v != null);
-      const sb = course.sections.map(x => bm['section-' + x.n] && bm['section-' + x.n].best).filter(v => v != null);
-      return { s, bm, lessonAvg: avg(lb), lessonDone: lb.length, sectionAvg: avg(sb), final: bm.final && bm.final.best, attempts: (byUser[s.uid] || []).length };
+      const pa = lessons.map(l => pAvg(bm, l)).filter(v => v != null);
+      const sb = course.sections.map(x => best(bm, 'section-' + x.n)).filter(v => v != null);
+      return { s, bm, lessonAvg: avg(pa), lessonDone: lessons.filter(l => best(bm, l.id) != null).length, marks: lessons.filter(l => best(bm, MK(l)) != null).length,
+        sectionAvg: avg(sb), final: best(bm, 'final'), attempts: (byUser[s.uid] || []).length };
     });
     /* вигляд журналу: «огляд» (по розділах) або окремий розділ — без горизонтальної прокрутки */
     let jv = ss.getItem('jView:' + subj.id) || 'all';
@@ -2027,40 +2173,73 @@
       if (e.best != null) return `<span class="cell ${gradeClass(e.best)}" title="Спроб: ${e.attempts}">${e.best}</span>`;
       return `<span class="cell g-lo" title="Не зараховано, спроб: ${e.attempts}">✕</span>`;
     };
+    const markCell = (r, l) => { const v = best(r.bm, MK(l));
+      return `<button type="button" class="cell sm j-mk ${v != null ? gradeClass(v) : 'none'}" ${canMark ? `data-mk="${r.s.uid}|${l.id}"` : 'disabled'} title="Оцінка за урок${canMark ? ' — натисніть, щоб поставити чи змінити' : ''}">${v != null ? v : '＋'}</button>`; };
 
     $app.innerHTML = head + `
       <div class="stat-tiles">
         <div class="card stat-tile"><div class="v">${list.length}</div><div class="k">Учнів у класі</div></div>
-        <div class="card stat-tile"><div class="v">${avg(rowsData.map(r => r.lessonAvg).filter(v => v != null)) ?? '—'}</div><div class="k">Середній бал класу (уроки)</div></div>
-        <div class="card stat-tile"><div class="v">${results.filter(r => list.some(s => s.uid === r.uid)).length}</div><div class="k">Усього спроб</div></div>
+        <div class="card stat-tile"><div class="v">${avg(rowsData.map(r => r.lessonAvg).filter(v => v != null)) ?? '—'}</div><div class="k">Середній бал класу (параграфи)</div></div>
+        <div class="card stat-tile"><div class="v">${rowsData.reduce((a, r) => a + r.marks, 0)}</div><div class="k">Оцінок за уроки</div></div>
         <div class="card stat-tile"><div class="v">${rowsData.filter(r => r.final != null).length}</div><div class="k">Склали річний тест</div></div>
       </div>
       ${list.length ? `<div class="fchips j-tabs"><button class="fchip ${jv === 'all' ? 'on' : ''}" data-jv="all">📊 Огляд за розділами</button>${course.sections.map(x => `<button class="fchip ${jv === 'sec' + x.n ? 'on' : ''}" data-jv="sec${x.n}" title="${esc(x.title)}">Розділ ${x.n}</button>`).join('')}</div>
-        <div class="card table-wrap j-wrap">${jv === 'all' ? `<table class="tbl tbl-compact">
-        <thead><tr><th class="sticky-col">Учень</th><th class="c">Середній</th><th class="c">Уроки</th>
-          ${course.sections.map(x => `<th class="c j-secol" title="${esc(x.title)}">Р${x.n}<small class="th-sub">уроки · підс.</small></th>`).join('')}<th class="c">Річний</th></tr></thead>
+        <div class="card table-wrap j-wrap" id="jPrint">${jv === 'all' ? `<div class="j-sec-title j-print-only">${esc(subj.name)} · ${cls} клас · огляд за розділами</div><table class="tbl tbl-compact">
+        <thead><tr><th class="sticky-col">Учень</th><th class="c">Середній</th><th class="c">Тести</th>
+          ${course.sections.map(x => `<th class="c j-secol" title="${esc(x.title)}">Р${x.n}<small class="th-sub">параграфи · підс.</small></th>`).join('')}<th class="c">Річний</th></tr></thead>
         <tbody>${rowsData.map(r => `<tr>
           <td class="sticky-col nm"><a href="javascript:void(0)" data-st="${r.s.uid}">${esc(r.s.name)}</a></td>
           <td class="c"><span class="cell ${gradeClass(r.lessonAvg)}">${r.lessonAvg ?? '—'}</span></td>
           <td class="c"><small class="j-done">${r.lessonDone}/${lessons.length}</small></td>
-          ${course.sections.map(x => { const sb = x.lessons.map(l => r.bm[l.id] && r.bm[l.id].best).filter(v => v != null); const a = avg(sb);
-            return `<td class="c j-secol"><span class="j-pair"><span class="cell sm ${gradeClass(a)}" title="Середній за уроки розділу: ${sb.length} з ${x.lessons.length}">${a ?? '·'}</span>${cell(r.bm['section-' + x.n])}</span></td>`; }).join('')}
+          ${course.sections.map(x => { const sb = x.lessons.map(l => pAvg(r.bm, l)).filter(v => v != null); const a = avg(sb);
+            return `<td class="c j-secol"><span class="j-pair"><span class="cell sm ${gradeClass(a)}" title="Середній за параграфи розділу (тест + урок): ${sb.length} з ${x.lessons.length}">${a ?? '·'}</span>${cell(r.bm['section-' + x.n])}</span></td>`; }).join('')}
           <td class="c">${cell(r.bm.final)}</td></tr>`).join('')}</tbody></table>`
-        : (() => { const sec = course.sections.find(x => 'sec' + x.n === jv); const sc = sec.lessons.map(l => ({ id: l.id, short: 'У' + l.n, label: l.n + '. ' + l.title })).concat([{ id: 'section-' + sec.n, short: 'Підс.', label: 'Підсумковий за розділ ' + sec.n, sum: true }]);
-          return `<div class="j-sec-title">Розділ ${sec.n}. ${esc(sec.title)}</div><table class="tbl tbl-compact j-sec-tbl">
-          <thead><tr><th class="sticky-col">Учень</th>${sc.map(c => `<th class="c ${c.sum ? 'th-sum' : ''}" title="${esc(c.label)}">${esc(c.short)}</th>`).join('')}<th class="c">Сер.</th></tr></thead>
-          <tbody>${rowsData.map(r => { const sb = sec.lessons.map(l => r.bm[l.id] && r.bm[l.id].best).filter(v => v != null);
-            return `<tr><td class="sticky-col nm"><a href="javascript:void(0)" data-st="${r.s.uid}">${esc(r.s.name)}</a></td>${sc.map(c => `<td class="c">${cell(r.bm[c.id])}</td>`).join('')}<td class="c"><span class="cell ${gradeClass(avg(sb))}">${avg(sb) ?? '—'}</span></td></tr>`; }).join('')}</tbody></table>
-          <div class="j-legend">${sc.filter(c => !c.sum).map(c => `<span><b>${esc(c.short)}</b> ${esc(c.label.replace(/^\d+\.\s*/, ''))}</span>`).join('')}</div>`; })()}</div>
-        <p class="muted" style="margin-top:10px;font-size:13.5px;font-weight:700">${jv === 'all' ? 'У кожному розділі: ліворуч — середній бал за тести уроків, праворуч — підсумковий тест розділу. ' : ''}✕ — спроби були, але тест не зараховано. Натисніть на ім’я учня, щоб побачити всі спроби.</p>`
+        : (() => { const sec = course.sections.find(x => 'sec' + x.n === jv);
+          return `<div class="j-sec-title">${esc(subj.name)} · ${cls} клас · Розділ ${sec.n}. ${esc(sec.title)}</div><table class="tbl tbl-compact j-sec-tbl j-mk-tbl">
+          <thead><tr><th class="sticky-col" rowspan="2">Учень</th>${sec.lessons.map(l => `<th class="c j-ph" colspan="3" title="${esc(pn(l) + '. ' + l.title)}">${esc(pn(l))}</th>`).join('')}<th class="c th-sum" rowspan="2" title="Підсумковий тест за розділ ${sec.n}">Підс.</th><th class="c" rowspan="2" title="Середній бал за параграфи розділу">Сер.</th></tr>
+          <tr>${sec.lessons.map(() => `<th class="c j-sub" title="Оцінка за тест">т</th><th class="c j-sub" title="Оцінка за урок">у</th><th class="c j-sub j-avg" title="Середній за параграф">сер</th>`).join('')}</tr></thead>
+          <tbody>${rowsData.map(r => { const sb = sec.lessons.map(l => pAvg(r.bm, l)).filter(v => v != null);
+            return `<tr><td class="sticky-col nm"><a href="javascript:void(0)" data-st="${r.s.uid}">${esc(r.s.name)}</a></td>${sec.lessons.map(l => { const pa = pAvg(r.bm, l);
+              return `<td class="c j-t">${cell(r.bm[l.id])}</td><td class="c j-u">${markCell(r, l)}</td><td class="c j-avg"><b class="j-pa ${gradeClass(pa)}">${pa ?? '·'}</b></td>`; }).join('')}
+              <td class="c">${cell(r.bm['section-' + sec.n])}</td><td class="c"><span class="cell ${gradeClass(avg(sb))}">${avg(sb) ?? '—'}</span></td></tr>`; }).join('')}</tbody></table>
+          <div class="j-legend">${sec.lessons.map(l => `<span><b>${esc(pn(l))}</b> ${esc(l.title)}</span>`).join('')}</div>`; })()}</div>
+        <p class="muted" style="margin-top:10px;font-size:13.5px;font-weight:700">${jv === 'all' ? 'У кожному розділі: ліворуч — середній бал за параграфи (тест + оцінка за урок), праворуч — підсумковий тест розділу. Оцінки за уроки ставляться у вкладці розділу. '
+          : '«т» — оцінка за тест, «у» — оцінка за урок (натисніть ＋, щоб поставити), «сер» — середній бал за параграф. '}✕ — спроби були, але тест не зараховано. Натисніть на ім’я учня, щоб побачити всі спроби.</p>`
         : `<div class="card empty"><span class="e">🧑‍🎓</span>У ${cls} класі ще немає учнів. <a href="#/teacher/students">Додати учнів</a></div>`}`;
     bind();
     $app.querySelectorAll('[data-jv]').forEach(b => b.onclick = () => { ss.setItem('jView:' + subj.id, b.dataset.jv); renderJournal(clsArg, courseArg, tabsHtml); });
-    $app.querySelector('#rTools').innerHTML = list.length ? `<button class="btn light sm" id="csv">⬇️ Експорт у CSV (Excel)</button>` : '';
+    $app.querySelector('#rTools').innerHTML = list.length ? `<button class="btn light sm" id="jPdf">📄 PDF</button> <button class="btn light sm" id="jPrn">🖨 Друк</button> <button class="btn light sm" id="csv">⬇️ CSV (Excel)</button>` : '';
+    const docTitle = `Журнал · ${subj.name} · ${cls} клас${jv === 'all' ? '' : ' · розділ ' + jv.slice(3)}`;
+    const pdfBtn = $app.querySelector('#jPdf'), prnBtn = $app.querySelector('#jPrn');
+    if (pdfBtn) pdfBtn.onclick = () => journalExport($app.querySelector('#jPrint'), docTitle, 'pdf', `zhurnal_${cls}klas_${subj.id}${jv === 'all' ? '' : '_' + jv}.pdf`);
+    if (prnBtn) prnBtn.onclick = () => journalExport($app.querySelector('#jPrint'), docTitle, 'print');
+    /* оцінка за урок: зберігається як ручний запис із testId «mark:<урок>» (змінити = видалити й створити заново) */
+    $app.querySelectorAll('[data-mk]').forEach(b => b.onclick = () => {
+      const [uid, lid] = b.dataset.mk.split('|'); const s = list.find(x => x.uid === uid), l = lessons.find(x => x.id === lid);
+      const old = (byUser[uid] || []).filter(r => r.testId === 'mark:' + lid);
+      const cur = old.length ? Math.max(...old.map(r => r.score)) : null;
+      modal(`<h2>Оцінка за урок</h2><p class="muted" style="font-weight:700;margin-bottom:12px">${esc(s.name)} · ${esc(pn(l))}. ${esc(l.title)}${best(bestMap(byUser[uid] || []), l.id) != null ? '<br>Оцінка за тест: <b>' + best(bestMap(byUser[uid] || []), l.id) + '</b>' : ''}</p>
+        <div class="mk-grid">${Array.from({ length: 12 }, (_, i) => i + 1).map(v => `<button type="button" class="cell ${gradeClass(v)} mk-v ${v === cur ? 'on' : ''}" data-v="${v}">${v}</button>`).join('')}</div>
+        <div class="form-error" id="mkErr"></div>
+        <div class="m-actions">${cur != null ? '<button class="btn danger" id="mkDel">🗑 Прибрати оцінку</button>' : ''}<button class="btn light" data-close>Скасувати</button></div>`, (box, close) => {
+        const done = async (v) => {
+          try {
+            for (const r of old) await Store.deleteResult(r.id);
+            if (v != null) await Store.saveManualResult({ uid, name: s.name, cls: s.cls, course: subj.id, testId: 'mark:' + lid, kind: 'mark', title: 'Оцінка за урок: ' + pn(l) + '. ' + l.title, score: v, full: 0, total: 0, durationSec: 0, leaves: 0 });
+            RS = null; close(); toast(v != null ? 'Оцінку ' + v + ' збережено' : 'Оцінку прибрано'); renderJournal(clsArg, courseArg, tabsHtml);
+          } catch (e) { box.querySelector('#mkErr').textContent = e.message || String(e); }
+        };
+        box.querySelectorAll('.mk-v').forEach(x => x.onclick = () => done(+x.dataset.v));
+        const del = box.querySelector('#mkDel'); if (del) del.onclick = () => done(null);
+      });
+    });
     const csvBtn = $app.querySelector('#csv');
     if (csvBtn) csvBtn.onclick = () => {
-      const header = ['Учень', 'Середній (уроки)', 'Тестів зараховано', 'Середній (розділи)'].concat(cols.map(c => c.label));
-      const lines = [header].concat(rowsData.map(r => [r.s.name, r.lessonAvg ?? '', r.lessonDone, r.sectionAvg ?? ''].concat(cols.map(c => { const e = r.bm[c.id]; return e ? (e.best != null ? e.best : 'не зар.') : ''; }))));
+      const exp = cols.flatMap(c => c.kind === 'lesson' ? [{ h: c.label + ' — тест', v: r => { const e = r.bm[c.id]; return e ? (e.best != null ? e.best : 'не зар.') : ''; } },
+        { h: c.label + ' — урок', v: r => best(r.bm, MK(c.l)) ?? '' }, { h: c.label + ' — середній', v: r => pAvg(r.bm, c.l) ?? '' }]
+        : [{ h: c.label, v: r => { const e = r.bm[c.id]; return e ? (e.best != null ? e.best : 'не зар.') : ''; } }]);
+      const header = ['Учень', 'Середній (параграфи)', 'Тестів зараховано', 'Оцінок за уроки', 'Середній (розділи)'].concat(exp.map(c => c.h));
+      const lines = [header].concat(rowsData.map(r => [r.s.name, r.lessonAvg ?? '', r.lessonDone, r.marks, r.sectionAvg ?? ''].concat(exp.map(c => c.v(r)))));
       const csv = '﻿' + lines.map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n');
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
@@ -2287,13 +2466,22 @@
     let dirty = false;
     const openCls = new Set();
     const COLORS = ['#FF7A59', '#FFB020', '#2BB673', '#14B8C4', '#3B82F6', '#6366F1', '#A855F7', '#EC4899', '#F43F5E', '#0EA5E9', '#84CC16'];
-    const courseOpts = sel => `<option value="">— матеріали готуються —</option>` +
-      AVAILABLE.map(c => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${esc(c.title)}</option>`).join('');
+    /* у списку матеріалів — лише курси цього класу; якщо назва предмета збігається з предметом курсу — лише вони */
+    const courseCls = c => { const m = String(c.title || '').match(/(\d+)\s*клас/) || String(c.id).match(/(\d+)$/); return m ? +m[1] : null; };
+    const normN = x => String(x || '').toLowerCase().replace(/[’'`ʼ]/g, '').replace(/\s+/g, ' ').trim();
+    const courseOpts = (sel, cls, name) => {
+      const ofCls = AVAILABLE.filter(c => courseCls(c) === +cls);
+      const same = ofCls.filter(c => normN(c.subject) === normN(name));
+      const list = (same.length ? same : ofCls).slice();
+      const cur = AVAILABLE.find(c => c.id === sel); if (cur && !list.includes(cur)) list.unshift(cur);
+      return `<option value="">— матеріали готуються —</option>` + (list.length ? list.map(c => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${esc(c.title)}</option>`).join('')
+        : `<option value="" disabled>для ${esc(cls)} класу матеріалів ще немає</option>`);
+    };
     const mark = () => { dirty = true; const b = $app.querySelector('#saveCat'); if (b) { b.disabled = false; b.textContent = '💾 Зберегти зміни'; } };
     function draw() {
       $app.innerHTML = `
         <div class="page-head"><div><h1>Предмети за класами</h1>
-          <p>Додавайте й прибирайте класи та предмети, змінюйте назви, значки й порядок, приховуйте від учнів окремі предмети або цілі класи.</p></div>
+          <p>Додавайте й прибирайте класи та предмети, змінюйте назви, значки й порядок, приховуйте окремі предмети (від учнів) або цілі класи (від учнів і вчителів).</p></div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <button class="btn light" id="addCls">＋ Додати клас</button>
             <button class="btn light" id="resetCat">↺ Стандартний список</button>
@@ -2312,7 +2500,7 @@
               <span class="adm-title"><b>${k.cls} клас</b><small>${k.subjects.length ? k.subjects.map(sj => esc(sj.icon) + ' ' + esc(sj.name)).join(' · ') : 'предметів немає'}</small></span>
               ${k.hidden ? '<span class="tag">🙈 клас приховано</span>' : ''}<span class="tag">${k.subjects.length}</span>
             </summary>
-            <label class="adm-check adm-clshide" title="Учні цього класу не бачитимуть жодного предмета"><input type="checkbox" ${k.hidden ? 'checked' : ''} data-k="${ki}" data-f="hidden"> 🙈 Приховати весь ${k.cls} клас від учнів</label>
+            <label class="adm-check adm-clshide" title="Клас не бачитимуть ні учні, ні вчителі (лише адміністратор)"><input type="checkbox" ${k.hidden ? 'checked' : ''} data-k="${ki}" data-f="hidden"> 🙈 Приховати весь ${k.cls} клас від учнів і вчителів</label>
             <div class="adm-list">
               ${k.subjects.length ? k.subjects.map((sj, si) => `
                 <div class="adm-row ${sj.hidden ? 'is-hidden' : ''}">
@@ -2323,7 +2511,7 @@
                     <button class="icon-btn" data-mv="${ki}:${si}:1" title="Нижче" ${si === k.subjects.length - 1 ? 'disabled' : ''}>↓</button>
                     <button class="icon-btn adm-del" data-delsub="${ki}:${si}" title="Видалити предмет">🗑</button>
                   </span>
-                  <select class="input adm-course" data-k="${ki}" data-s="${si}" data-f="course" title="Матеріали">${courseOpts(sj.course)}</select>
+                  <select class="input adm-course" data-k="${ki}" data-s="${si}" data-f="course" title="Матеріали">${courseOpts(sj.course, k.cls, sj.name)}</select>
                   <label class="adm-check" title="Учні не бачитимуть предмет"><input type="checkbox" ${sj.hidden ? 'checked' : ''} data-k="${ki}" data-s="${si}" data-f="hidden"> Приховати</label>
                 </div>`).join('') : '<p class="muted" style="font-weight:700">Предметів ще немає</p>'}
             </div>
@@ -2348,6 +2536,7 @@
         if (f === 'course') sj.unlinked = !t.value;
         if (f === 'course' && t.value && (!sj.name || sj.name === 'Новий предмет')) { const c = AVAILABLE.find(x => x.id === t.value); if (c && c.subject) { sj.name = c.subject; draw(); } }
         if (f === 'hidden') t.closest('.adm-row').classList.toggle('is-hidden', t.checked);
+        if (f === 'name') { const cs = t.closest('.adm-row').querySelector('.adm-course'); if (cs) cs.innerHTML = courseOpts(sj.course, k.cls, sj.name); }
       }
       mark();
     }
