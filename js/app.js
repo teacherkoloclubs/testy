@@ -168,7 +168,7 @@
     top.hidden = !user;
     if (!user) return;
     const links = isAdmin()
-      ? [['#/', 'Класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/teacher/teachers', 'Вчителі'], ['#/teacher/subjects', 'Предмети'], ['#/teacher/schedule', 'Розклад'], ['#/chat', '💬 Чат'], ['#/help', '❓']]
+      ? [['#/', 'Класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/teacher/teachers', 'Вчителі'], ['#/teacher/subjects', 'Предмети'], ['#/teacher/schedule', 'Розклад'], ['#/chat', '💬 Чат'], ['#/help', '📖']]
       : isTeacher() ? [['#/', 'Мої класи'], ['#/teacher/results', 'Результати'], ['#/teacher/students', 'Учні'], ['#/chat', '💬 Чат'], ['#/help', '📖 Інструкція']]
       : user.role === 'pending' ? []
       : [['#/', 'Мої предмети'], ['#/my', 'Мої результати'], ['#/chat', '💬 Чат'], ['#/help', '📖 Інструкція']];
@@ -523,7 +523,8 @@
         'Біля параграфа натисни <b>🎞 Презентація</b>.',
         'Гортай слайди стрілками ← → на екрані, клавіатурою або свайпом на телефоні.',
         'Виконуй вправи на слайдах (правда/міф, відповідності, порядок) — вони допомагають підготуватися до тесту.',
-        'Наприкінці — запитання для самоперевірки й посилання на тест.'],
+        'Наприкінці — запитання для самоперевірки й посилання на тест.',
+        'Де є кнопка <b>📒 Конспект уроку</b> — це стислий виклад параграфа зі схемами, формулами й прикладами. Його зручно повторювати перед тестом і можна надрукувати.'],
         ['Вправи в презентації не впливають на оцінку — сміливо пробуй.']),
       sec('test', '📝', 'Тести', 'Тест за параграф — 12 питань, за розділ — 24, річний — 36.', [
         'Натисни <b>📝 Тест</b> біля параграфа (або <b>«Почати»</b> біля підсумкового тесту).',
@@ -571,6 +572,7 @@
         'Відкрийте клас → предмет. Біля кожного уроку — номер параграфа <b>§</b> за підручником.',
         '<b>📋 План</b> — мета уроку, етапи з хронометражем, посилання на презентацію, симуляцію й тест, творче домашнє завдання.',
         '<b>🎞 Презентація</b> — показуйте на уроці з проєктора; анімовані слайди з теорією та вправами.',
+        '<b>📒 Конспект уроку</b> (там, де є) — стислий зміст параграфа зі схемами й формулами; можна роздрукувати для учнів.',
         '<b>🧪 Симуляції</b> й <b>🔬 лабораторні роботи</b> — демонструйте на уроці або давайте учням для самостійної роботи.',
         '<b>📝 Тест</b> — учні проходять його на уроці чи вдома; ви можете переглянути тест заздалегідь.'],
         ['Дати уроків з’являються автоматично, якщо адміністратор завантажив розклад.']),
@@ -645,6 +647,7 @@
       if (p[0] === 'course') return await renderCourse(p[1]);
       if (p[0] === 'slides') return await renderSlides(p[1], p[2]);
       if (p[0] === 'plan') return await renderPlan(p[1], p[2]);
+      if (p[0] === 'notes') return await renderNotes(p[1], p[2]);
       if (p[0] === 'test') return await renderTest(p[1], p[2], p[3]);
       if (p[0] === 'units') return await renderUnits(p[1]);
       if (p[0] === 'kr') return await renderKr(p[1], p[2], p[3]);
@@ -765,7 +768,7 @@
       <div class="grid subject-grid">${visibleSubjects(k).map(s => `
         <a class="card subject-tile ${s.ready ? '' : 'soon'}" style="--c:${k.color}" href="${s.ready ? '#/course/' + s.id : 'javascript:void(0)'}" ${s.ready ? '' : 'data-soon'}>
           <span class="ico">${s.icon}</span>
-          <span class="st-body"><h3>${esc(s.name)}${s.hidden ? ' <span class="tag">🙈 приховано</span>' : ''}</h3><span class="muted st-sub" id="prog-${s.id}">${s.ready ? 'Презентації та тести' : '⏳ Матеріали готуються'}</span></span>
+          <span class="st-body"><h3>${esc(s.name)}${s.hidden ? ' <span class="tag">🙈 приховано</span>' : ''}</h3><span class="muted st-sub" id="prog-${s.id}">${s.ready ? (hasNotes(s.id) ? 'Конспект та тести' : 'Презентації та тести') : '⏳ Матеріали готуються'}</span></span>
         </a>`).join('')}</div>`;
     $app.querySelectorAll('[data-soon]').forEach(a => a.addEventListener('click', () => toast('Матеріали з цього предмета ще готуються')));
   }
@@ -781,6 +784,7 @@
     const sims = await loadSims(id);
     const labs = await loadLabs(id);
     const plans = await loadPlans(id, course);
+    const notes = hasNotes(id) ? await loadNotes(id) : {};
     const results = user.role === 'student' ? (await Store.myResults()).filter(r => r.course === id) : [];
     const bm = bestMap(results);
     const lessons = course.sections.flatMap(s => s.lessons);
@@ -827,6 +831,7 @@
                 <div><h3>${esc(l.title)}</h3><div class="meta">Урок ${l.n}${l.pages ? ' · ' + esc(pg(l.pages)) : ''} ${dateBadge(l)} ${status(l.id)}</div></div>
                 <div class="lesson-actions">
                   <a class="btn light sm" href="#/slides/${id}/${l.id}">🎞 Презентація</a>
+                  ${notes[l.id] ? `<a class="btn light sm nt-btn" href="#/notes/${id}/${l.id}">📒 Конспект уроку</a>` : ''}
                   ${window.Games && Games.has(id, l.id) ? `<a class="btn light sm game-btn" href="#/games/${id}/${l.id}">🎮 Ігри</a>` : ''}
                   ${plans[l.id] ? (isStaff() ? `<a class="btn light sm" href="#/plan/${id}/${l.id}" title="План уроку й домашнє завдання">📋 План</a>` : (plans[l.id].hw ? `<a class="btn light sm" href="#/plan/${id}/${l.id}" title="Творче домашнє завдання">🏠 Д/з</a>` : '')) : ''}
                   ${testBtn(l.id, `#/test/${id}/lesson/${l.id}`, '📝 Тест')}
@@ -885,6 +890,51 @@
   async function loadPlans(id, course) {
     await Promise.all(course.sections.map(s => loadScript(`data/courses/${id}/p${s.n}.js`).catch(() => null)));
     return (window.PLANS || {})[id] || {};
+  }
+  /* ---------------- конспект уроку ---------------- */
+  const hasNotes = id => !!(AVAILABLE.find(c => c.id === id) || {}).notes;
+  async function loadNotes(id) {
+    window.NOTES = window.NOTES || {};
+    if (!window.NOTES[id]) { try { await loadScript(`data/notes/${id}.js`); } catch (e) { window.NOTES[id] = {}; } }
+    return window.NOTES[id] || {};
+  }
+  async function renderNotes(id, lid) {
+    const meta = catalogSubject(id);
+    if (!meta || (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) || !canCourse(meta.id)) { location.hash = '#/'; return; }
+    $app.innerHTML = '<div class="loader"><span></span></div>';
+    const [course, notes] = await Promise.all([loadCourse(id), loadNotes(id)]);
+    const lessons = course.sections.flatMap(s => s.lessons.map(l => Object.assign(l, { section: l.section || s })));
+    const idx = lessons.findIndex(l => l.id === lid), lesson = lessons[idx], x = notes[lid];
+    if (!lesson || !x) { $app.innerHTML = `<div class="card empty"><span class="e">📒</span>Конспект до цього уроку ще готується</div>`; return; }
+    const no = lessonNo(id, lid), pn = no != null ? '§ ' + no : 'Урок ' + lesson.n;
+    const prev = lessons.slice(0, idx).reverse().find(l => notes[l.id]), next = lessons.slice(idx + 1).find(l => notes[l.id]);
+    const rt = richText;
+    const block = (b, i) => `<section class="nt-block ${b.svg ? 'has-fig' : ''} ${i % 2 ? 'alt' : ''}">
+        <div class="nt-txt"><h2>${esc(b.h)}</h2>${(b.p || []).map(t => `<p>${rt(t)}</p>`).join('')}${(b.list || []).length ? `<ul>${b.list.map(t => `<li>${rt(t)}</li>`).join('')}</ul>` : ''}</div>
+        ${b.svg ? `<figure class="nt-fig">${b.svg}${b.cap ? `<figcaption>${rt(b.cap)}</figcaption>` : ''}</figure>` : ''}</section>`;
+    const body = `
+      <div class="nt-idea"><span>💡</span><div><b>Головне:</b> ${rt(x.idea || '')}</div></div>
+      ${(x.blocks || []).map(block).join('')}
+      ${(x.formulas || []).length ? `<section class="nt-box nt-formulas"><h2>🧮 Формули</h2><div class="nt-fgrid">${x.formulas.map(f => `<div class="nt-f"><div class="nt-fx">${rt(f[0])}</div><div class="nt-fd">${rt(f[1])}</div></div>`).join('')}</div></section>` : ''}
+      ${x.example ? `<section class="nt-box nt-example"><h2>✍️ Приклад розв’язування</h2><p class="nt-q">${rt(x.example.q)}</p>
+        ${x.example.given ? `<div class="nt-given"><div><b>Дано:</b>${x.example.given.map(g => `<div>${rt(g)}</div>`).join('')}</div><div><b>Розв’язання:</b>${x.example.steps.map(g => `<div>${rt(g)}</div>`).join('')}</div></div>` : `<ol>${x.example.steps.map(g => `<li>${rt(g)}</li>`).join('')}</ol>`}
+        <p class="nt-ans"><b>Відповідь:</b> ${rt(x.example.ans)}</p></section>` : ''}
+      ${(x.terms || []).length ? `<section class="nt-box nt-terms"><h2>📖 Ключові поняття</h2><dl>${x.terms.map(t => `<dt>${rt(t[0])}</dt><dd>${rt(t[1])}</dd>`).join('')}</dl></section>` : ''}
+      ${(x.remember || []).length ? `<section class="nt-box nt-rem"><h2>📌 Запам’ятай</h2><ul>${x.remember.map(t => `<li>${rt(t)}</li>`).join('')}</ul></section>` : ''}`;
+    $app.innerHTML = `<div class="crumbs">${isStaff() ? `<a href="#/">Класи</a><span>›</span>` : ''}<a href="#/class/${meta.cls}">${meta.cls} клас</a><span>›</span><a href="#/course/${id}">${esc(meta.name)}</a><span>›</span><span>Конспект</span></div>
+      <div class="nt-head" style="--c:${lesson.section.color || meta.color}">
+        <div class="nt-badge">${esc(pn)}</div>
+        <div><p class="nt-sec">Розділ ${lesson.section.n}. ${esc(lesson.section.title)}</p><h1>📒 ${esc(lesson.title)}</h1><p class="nt-meta">Конспект уроку${lesson.pages ? ' · підручник, ' + esc(pg(lesson.pages)) : ''}</p></div>
+      </div>
+      <div class="nt-tools"><a class="btn light sm" href="#/slides/${id}/${lid}">🎞 Презентація</a><a class="btn light sm" href="#/test/${id}/lesson/${lid}">📝 Тест</a><button class="btn light sm" id="ntPrint">🖨 Друк конспекту</button></div>
+      <article class="nt-page" id="ntPage">${body}</article>
+      <div class="nt-nav">${prev ? `<a class="btn light" href="#/notes/${id}/${prev.id}">← ${esc(lessonNo(id, prev.id) != null ? '§ ' + lessonNo(id, prev.id) : prev.title)}</a>` : '<span></span>'}<a class="btn light" href="#/course/${id}">До змісту</a>${next ? `<a class="btn brand" href="#/notes/${id}/${next.id}">${esc(lessonNo(id, next.id) != null ? '§ ' + lessonNo(id, next.id) : next.title)} →</a>` : '<span></span>'}</div>`;
+    $app.querySelector('#ntPrint').onclick = () => {
+      const links = [...document.querySelectorAll('link[rel="stylesheet"]')].map(l => `<link rel="stylesheet" href="${l.href}">`).join('');
+      printHtml(`<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8"><title>Конспект · ${esc(lesson.title)}</title>${links}<style>
+        @page{size:A4 portrait;margin:12mm}body{background:#fff!important;padding:0!important}.nt-page{box-shadow:none!important;border:0!important;padding:0!important}.nt-block{break-inside:avoid}.nt-box{break-inside:avoid}</style></head>
+        <body><h1 style="font-size:20px;margin:0 0 4px">📒 ${esc(pn)}. ${esc(lesson.title)}</h1><p style="margin:0 0 12px;color:#64748B;font-size:12px">${esc(meta.name)} · ${meta.cls} клас · конспект уроку</p>${$app.querySelector('#ntPage').outerHTML}</body></html>`, 1200);
+    };
   }
   async function renderPlan(id, lid) {
     const meta = catalogSubject(id);
@@ -2081,10 +2131,10 @@
     return ncol > 9 || t.scrollWidth > 760;
   }
   /* друк довільного HTML через прихований iframe (не блокується як спливне вікно) */
-  function printHtml(html) {
+  function printHtml(html, delay) {
     const fr = document.createElement('iframe'); fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'; document.body.appendChild(fr);
     const d = fr.contentWindow.document; d.open(); d.write(html); d.close();
-    setTimeout(() => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { toast('Браузер заблокував друк'); } setTimeout(() => fr.remove(), 60000); }, 350);
+    setTimeout(() => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { toast('Браузер заблокував друк'); } setTimeout(() => fr.remove(), 60000); }, delay || 350);
   }
   /* ---------- власний генератор PDF (без зовнішніх бібліотек): таблиця → сторінки-зображення A4 ---------- */
   const PDFGEN = (() => {

@@ -627,3 +627,52 @@ body { background-color: #F7F9FD; }
 .guide-tips { margin-top: 10px; padding: 10px 14px; border-radius: 12px; background: #FFF8E6; font-size: 14px; font-weight: 600; color: #6B4E00; }
 .guide-tips p { margin: 3px 0; }
 @media (max-width: 720px) { .guide-toc ol { columns: 1; } }
+
+/* ---- конспект уроку ---- */
+.nt-btn { border-color: #C7D2FE !important; color: var(--brand) !important; }
+.nt-head { display: flex; gap: 18px; align-items: center; padding: 22px 24px; border-radius: 22px; background: linear-gradient(135deg, var(--c, #4F46E5), color-mix(in srgb, var(--c, #4F46E5) 60%, #0EA5E9)); color: #fff; margin-bottom: 14px; }
+.nt-head h1 { margin: 2px 0; font-size: 26px; color: #fff; }
+.nt-badge { flex: none; display: grid; place-items: center; min-width: 74px; height: 74px; padding: 0 10px; border-radius: 20px; background: rgba(255,255,255,.2); font-size: 22px; font-weight: 900; }
+.nt-sec, .nt-meta { margin: 0; opacity: .9; font-weight: 700; font-size: 13.5px; }
+.nt-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.nt-page { background: #fff; border-radius: 22px; border: 1px solid var(--line); padding: 26px 30px; box-shadow: 0 8px 30px rgba(31,35,64,.06);
+  background-image: linear-gradient(transparent 31px, #F1F5FF 32px); background-size: 100% 32px; }
+.nt-idea { display: flex; gap: 12px; align-items: flex-start; background: #EEF2FF; border-left: 5px solid var(--brand); padding: 14px 18px; border-radius: 12px; font-size: 16.5px; line-height: 1.5; margin-bottom: 18px; }
+.nt-idea > span { font-size: 24px; }
+.nt-block { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: center; padding: 16px 0; border-bottom: 1px dashed #DDE3F3; }
+.nt-block.has-fig { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
+.nt-block.has-fig.alt .nt-fig { order: -1; }
+.nt-block h2 { font-size: 19px; margin: 0 0 8px; color: var(--brand); }
+.nt-block p, .nt-block li { font-size: 15.5px; line-height: 1.6; margin: 0 0 8px; background: rgba(255,255,255,.85); }
+.nt-block ul { margin: 0 0 6px 20px; padding: 0; }
+.nt-block b { color: #111827; }
+.nt-block mark, .nt-box mark { background: #FEF08A; padding: 0 3px; border-radius: 4px; }
+.nt-fig { margin: 0; background: #fff; border: 1px solid #E5E7EB; border-radius: 16px; padding: 12px; text-align: center; }
+.nt-fig svg { width: 100%; height: auto; max-height: 300px; }
+.nt-fig figcaption { font-size: 13px; color: var(--ink-2); font-weight: 600; margin-top: 6px; }
+.nt-box { margin-top: 18px; border-radius: 16px; padding: 16px 20px; }
+.nt-box h2 { font-size: 18px; margin: 0 0 10px; }
+.nt-formulas { background: #FFF7ED; border: 1px solid #FED7AA; }
+.nt-fgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.nt-f { background: #fff; border-radius: 12px; padding: 10px 14px; border: 1px solid #FED7AA; }
+.nt-fx { font-size: 21px; font-weight: 900; font-family: 'Cambria Math', Georgia, serif; color: #9A3412; }
+.nt-fd { font-size: 13.5px; color: var(--ink-2); font-weight: 600; margin-top: 4px; }
+.nt-example { background: #F0FDF4; border: 1px solid #BBF7D0; }
+.nt-q { font-weight: 700; }
+.nt-given { display: grid; grid-template-columns: minmax(150px, .5fr) 1.5fr; gap: 16px; font-size: 15px; line-height: 1.7; }
+.nt-given > div:first-child { border-right: 2px solid #86EFAC; padding-right: 12px; }
+.nt-ans { margin: 10px 0 0; font-size: 15.5px; }
+.nt-terms { background: #F8FAFC; border: 1px solid var(--line); }
+.nt-terms dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; }
+.nt-terms dt { font-weight: 800; color: var(--brand); }
+.nt-terms dd { margin: 0; }
+.nt-rem { background: #FEFCE8; border: 1px solid #FDE68A; }
+.nt-rem ul { margin: 0 0 0 20px; padding: 0; line-height: 1.6; }
+.nt-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .nt-block.has-fig { grid-template-columns: 1fr; }
+  .nt-block.has-fig.alt .nt-fig { order: 0; }
+  .nt-page { padding: 18px 16px; }
+  .nt-head { padding: 16px; } .nt-head h1 { font-size: 20px; } .nt-badge { min-width: 56px; height: 56px; font-size: 17px; }
+  .nt-terms dl, .nt-given { grid-template-columns: 1fr; } .nt-given > div:first-child { border-right: 0; padding: 0; }
+}
