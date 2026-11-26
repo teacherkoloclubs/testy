@@ -39,7 +39,8 @@ window.CATALOG = [
     { id: 'informatics8', name: 'Інформатика', icon: '💻', ready: true },
     { id: 'physics8', name: 'Фізика', icon: '🔭', ready: true },
     { id: 'business8', name: 'Підприємництво', icon: '💼', ready: true },
-    { id: 'histua8', name: 'Історія України', icon: '🇺🇦', ready: true }
+    { id: 'histua8', name: 'Історія України', icon: '🇺🇦', ready: true },
+    { id: 'histw8', name: 'Всесвітня історія', icon: '🧭', ready: true }
   ]},
   { cls: 9, color: '#EC4899', subjects: [
     { id: 'informatics9', name: 'Інформатика', icon: '💻', ready: true },
@@ -71,5 +72,6 @@ window.AVAILABLE_COURSES = [
   { id: 'histua8', subject: 'Історія України', title: 'Історія України, 8 клас — І. Щупак та ін., УОВЦ «Оріон», 2025' },
   { id: 'histua9', subject: 'Історія України', title: 'Історія України, 9 клас — А. Галімов та ін., Видавництво «Ранок», 2026' },
   { id: 'histint6', subject: 'Історія України. Всесвітня історія', title: 'Історія України. Всесвітня історія, 6 клас — І. Щупак та ін., УОВЦ «Оріон», 2023' },
-  { id: 'histw7', subject: 'Всесвітня історія', title: 'Всесвітня історія, 7 клас — І. Щупак та ін., УОВЦ «Оріон», 2024' }
+  { id: 'histw7', subject: 'Всесвітня історія', title: 'Всесвітня історія, 7 клас — І. Щупак та ін., УОВЦ «Оріон», 2024' },
+  { id: 'histw8', subject: 'Всесвітня історія', title: 'Всесвітня історія, 8 клас — І. Щупак та ін., УОВЦ «Оріон», 2025' }
 ];
