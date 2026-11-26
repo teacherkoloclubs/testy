@@ -34,14 +34,16 @@ window.CATALOG = [
     { id: 'informatics7', name: 'Інформатика', icon: '💻', ready: true },
     { id: 'physics7', name: 'Фізика', icon: '🔭', ready: true },
     { id: 'histua7', name: 'Історія України', icon: '🇺🇦', ready: true },
-    { id: 'histw7', name: 'Всесвітня історія', icon: '🏰', ready: true }
+    { id: 'histw7', name: 'Всесвітня історія', icon: '🏰', ready: true },
+    { id: 'geo7', name: 'Географія', icon: '🗺', ready: true }
   ]},
   { cls: 8, color: '#A855F7', subjects: [
     { id: 'informatics8', name: 'Інформатика', icon: '💻', ready: true },
     { id: 'physics8', name: 'Фізика', icon: '🔭', ready: true },
     { id: 'business8', name: 'Підприємництво', icon: '💼', ready: true },
     { id: 'histua8', name: 'Історія України', icon: '🇺🇦', ready: true },
-    { id: 'histw8', name: 'Всесвітня історія', icon: '🧭', ready: true }
+    { id: 'histw8', name: 'Всесвітня історія', icon: '🧭', ready: true },
+    { id: 'geo8', name: 'Географія', icon: '🇺🇦', ready: true }
   ]},
   { cls: 9, color: '#EC4899', subjects: [
     { id: 'informatics9', name: 'Інформатика', icon: '💻', ready: true },
@@ -77,5 +79,7 @@ window.AVAILABLE_COURSES = [
   { id: 'histw7', subject: 'Всесвітня історія', title: 'Всесвітня історія, 7 клас — І. Щупак та ін., УОВЦ «Оріон», 2024' },
   { id: 'histw8', subject: 'Всесвітня історія', title: 'Всесвітня історія, 8 клас — І. Щупак та ін., УОВЦ «Оріон», 2025' },
   { id: 'histw9', subject: 'Всесвітня історія', title: 'Всесвітня історія, 9 клас — О. Гісем та ін., Видавництво «Ранок», 2026' },
-  { id: 'geo6', subject: 'Географія', title: 'Географія, 6 клас — С. Запотоцький та ін., Астон, 2023' }
+  { id: 'geo6', subject: 'Географія', title: 'Географія, 6 клас — С. Запотоцький та ін., Астон, 2023' },
+  { id: 'geo7', subject: 'Географія', title: 'Географія, 7 клас — В. Бойко та ін., Перун, 2024' },
+  { id: 'geo8', subject: 'Географія', title: 'Географія, 8 клас — В. Бойко та ін., Перун, 2025' }
 ];
