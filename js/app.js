@@ -611,12 +611,9 @@
         ${x.tips.length ? `<div class="guide-tips">${x.tips.map(t => `<p>💡 ${t}</p>`).join('')}</div>` : ''}</section>`).join('')}</div>`;
     $app.querySelectorAll('[data-go]').forEach(a => a.onclick = () => { const el = document.getElementById('g-' + a.dataset.go); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
     $app.querySelector('#helpPrint').onclick = () => {
-      const fr = document.createElement('iframe'); fr.style.cssText = 'position:fixed;width:0;height:0;border:0;right:0;bottom:0'; document.body.appendChild(fr);
-      const d = fr.contentWindow.document; d.open();
-      d.write(`<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8"><title>Інструкція</title><style>@page{size:A4 portrait;margin:14mm}body{font-family:Inter,Arial,sans-serif;color:#1F2340;font-size:12px;line-height:1.45}
+      printHtml(`<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8"><title>Інструкція</title><style>@page{size:A4 portrait;margin:14mm}body{font-family:Inter,Arial,sans-serif;color:#1F2340;font-size:12px;line-height:1.45}
         h1{font-size:18px}h2{font-size:14px;margin:14px 0 4px;break-after:avoid}.guide-n,.guide-toc{display:none}ol{margin:4px 0 4px 18px;padding:0}li{margin:2px 0}.guide-tips p{margin:2px 0;color:#475569}code{background:#F1F5F9;padding:0 3px}section{break-inside:avoid}</style></head>
         <body><h1>📖 Інструкція з користування порталом — ${tab === 'teacher' ? 'для вчителя' : 'для учня'}</h1>${$app.querySelector('.guide').innerHTML}</body></html>`);
-      d.close(); setTimeout(() => { fr.contentWindow.focus(); fr.contentWindow.print(); setTimeout(() => fr.remove(), 60000); }, 300);
     };
   }
 
@@ -1584,9 +1581,7 @@
             navigator.clipboard.writeText(txt).then(() => toast('Скопійовано'));
           };
           box.querySelector('#cPrint').onclick = () => {
-            const w = window.open('', '_blank');
-            w.document.write(`<html><head><meta charset="utf-8"><title>Логіни</title><style>body{font-family:sans-serif;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px}.lc{border:1px dashed #999;padding:10px;border-radius:8px;font-size:14px;display:flex;gap:8px;align-items:center;justify-content:space-between;break-inside:avoid}.lc-txt{line-height:1.5}b{font-size:15px;display:block}code{font-size:15px;font-weight:bold}.lc-qr{width:86px;height:86px;flex:none}.lc-site{display:block;color:#555;font-size:11px}.muted{color:#666}</style></head><body>${box.querySelector('#lcards').innerHTML}<p style="grid-column:1/-1">Сайт: ${esc(location.origin + location.pathname)}</p></body></html>`);
-            w.document.close(); w.focus(); w.print();
+            printHtml(`<html><head><meta charset="utf-8"><title>Логіни</title><style>@page{size:A4 portrait;margin:10mm}body{font-family:sans-serif;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px}.lc{border:1px dashed #999;padding:10px;border-radius:8px;font-size:14px;display:flex;gap:8px;align-items:center;justify-content:space-between;break-inside:avoid}.lc-txt{line-height:1.5}b{font-size:15px;display:block}code{font-size:15px;font-weight:bold}.lc-qr{width:86px;height:86px;flex:none}.lc-site{display:block;color:#555;font-size:11px}.muted{color:#666}</style></head><body>${box.querySelector('#lcards').innerHTML}<p style="grid-column:1/-1">Сайт: ${esc(location.origin + location.pathname)}</p></body></html>`);
           };
         }, { wide: true });
     }
@@ -2085,33 +2080,133 @@
     const ncol = Math.max(0, ...[...t.rows].map(r => [...r.cells].reduce((a, c) => a + (c.colSpan || 1), 0)));
     return ncol > 9 || t.scrollWidth > 760;
   }
-  let H2P = null;
-  const loadHtml2pdf = () => H2P || (H2P = new Promise((ok, no) => {
-    if (window.html2pdf) return ok(window.html2pdf);
-    const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-    sc.onload = () => window.html2pdf ? ok(window.html2pdf) : no(new Error('PDF')); sc.onerror = () => { H2P = null; no(new Error('PDF')); }; document.head.appendChild(sc);
-  }));
+  /* друк довільного HTML через прихований iframe (не блокується як спливне вікно) */
+  function printHtml(html) {
+    const fr = document.createElement('iframe'); fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'; document.body.appendChild(fr);
+    const d = fr.contentWindow.document; d.open(); d.write(html); d.close();
+    setTimeout(() => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { toast('Браузер заблокував друк'); } setTimeout(() => fr.remove(), 60000); }, 350);
+  }
+  /* ---------- власний генератор PDF (без зовнішніх бібліотек): таблиця → сторінки-зображення A4 ---------- */
+  const PDFGEN = (() => {
+    const GC = { 'g-hi': ['#E6F6F0', '#047857'], 'g-mid': ['#EAF2FF', '#1D4ED8'], 'g-avg': ['#FEF5E3', '#B45309'], 'g-lo': ['#FDEDED', '#B91C1C'] };
+    const gradeOf = el => { const g = el.querySelector('.cell,.j-pa'); if (!g) return null; const k = Object.keys(GC).find(x => g.classList.contains(x)); return k ? GC[k] : null; };
+    /* сітка таблиці з урахуванням rowspan/colspan */
+    function grid(table) {
+      const out = [], occ = []; let head = 0;
+      [...table.rows].forEach((tr, r) => {
+        if (tr.parentElement.tagName === 'THEAD') head = r + 1;
+        occ[r] = occ[r] || []; let c = 0;
+        [...tr.cells].forEach(td => {
+          while (occ[r][c]) c++;
+          const rs = td.rowSpan || 1, cs = td.colSpan || 1;
+          for (let i = 0; i < rs; i++) { occ[r + i] = occ[r + i] || []; for (let j = 0; j < cs; j++) occ[r + i][c + j] = 1; }
+          const txt = td.textContent.replace(/＋/g, '').replace(/\s+/g, ' ').trim();
+          const chips = [...td.querySelectorAll('.cell,.j-pa')].map(e => ({ t: e.textContent.replace(/＋/g, '').trim(), g: GC[Object.keys(GC).find(x => e.classList.contains(x))] || null }));
+          out.push({ r, c, rs, cs, txt, chips: chips.length > 1 ? chips : null, th: td.tagName === 'TH', left: td.classList.contains('sticky-col') || td.classList.contains('nm'), g: gradeOf(td), sub: td.querySelector('.th-sub') ? td.querySelector('.th-sub').textContent.trim() : '' });
+          c += cs;
+        });
+      });
+      const ncol = Math.max(...occ.map(x => x.length)), nrow = table.rows.length;
+      return { cells: out, ncol, nrow, head };
+    }
+    function render(o) {
+      const { table, title, subtitle, legend, landscape } = o;
+      const S = 4, PW = (landscape ? 297 : 210) * S, PH = (landscape ? 210 : 297) * S, M = 10 * S;
+      const G = grid(table), W = PW - 2 * M;
+      const ctx0 = document.createElement('canvas').getContext('2d');
+      let fs = 13; const font = (b, f) => `${b ? '700' : '500'} ${f}px Inter, Arial, sans-serif`;
+      let widths;
+      for (; fs >= 7; fs -= 0.5) {
+        widths = Array(G.ncol).fill(fs * 2.2);
+        G.cells.filter(x => x.cs === 1).forEach(x => { ctx0.font = font(x.th || x.left, fs); const tw = x.chips ? x.chips.reduce((a, ch) => a + ctx0.measureText(ch.t).width + fs, 0) : ctx0.measureText(x.txt).width; widths[x.c] = Math.max(widths[x.c], tw + fs * 1.1); });
+        if (widths.reduce((a, b) => a + b, 0) <= W) break;
+      }
+      const tot = widths.reduce((a, b) => a + b, 0), k = W / tot; widths = widths.map(w => w * Math.min(k, 1.8));
+      const xs = [M]; widths.forEach((w, i) => xs.push(xs[i] + w));
+      const rh = fs * 2.1, pages = [];
+      let cv, ctx, y;
+      const newPage = first => {
+        cv = document.createElement('canvas'); cv.width = PW; cv.height = PH; ctx = cv.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, PW, PH); ctx.textBaseline = 'middle'; y = M;
+        if (first) { ctx.fillStyle = '#1F2340'; ctx.font = font(true, 22); ctx.fillText(title, M, y + 12); y += 30;
+          if (subtitle) { ctx.fillStyle = '#6B6F8E'; ctx.font = font(false, 13); ctx.fillText(subtitle, M, y + 8); y += 24; } }
+        pages.push(cv);
+      };
+      const drawRow = r => {
+        G.cells.filter(x => x.r === r).forEach(x => {
+          const x0 = xs[x.c], x1 = xs[x.c + x.cs], h = rh * x.rs;
+          ctx.fillStyle = x.th ? '#F1F5F9' : '#fff'; ctx.fillRect(x0, y, x1 - x0, h);
+          ctx.strokeStyle = '#CBD5E1'; ctx.lineWidth = 1; ctx.strokeRect(x0 + .5, y + .5, x1 - x0, h);
+          if (!x.txt) return;
+          if (x.chips) { ctx.font = font(true, fs); const ws = x.chips.map(ch => ctx.measureText(ch.t).width), gap = fs * 0.9, all = ws.reduce((a, b) => a + b, 0) + gap * (ws.length - 1);
+            let cx = (x0 + x1 - all) / 2; const cy = y + h / 2;
+            x.chips.forEach((ch, i) => { if (ch.g) { ctx.fillStyle = ch.g[0]; ctx.fillRect(cx - fs * 0.3, cy - fs * 0.75, ws[i] + fs * 0.6, fs * 1.5); ctx.fillStyle = ch.g[1]; } else ctx.fillStyle = '#94A3B8'; ctx.fillText(ch.t, cx, cy); cx += ws[i] + gap; });
+            return; }
+          let t = x.txt; if (x.sub && t.endsWith(x.sub)) t = t.slice(0, -x.sub.length).trim();
+          ctx.font = font(x.th || !!x.g, fs);
+          while (t.length > 1 && ctx.measureText(t).width > x1 - x0 - 6) t = t.slice(0, -2) + '…';
+          const tw = ctx.measureText(t).width, cx = x.left ? x0 + fs * 0.5 : (x0 + x1 - tw) / 2, cy = y + h / 2 - (x.sub ? fs * 0.35 : 0);
+          if (x.g) { ctx.fillStyle = x.g[0]; ctx.fillRect(cx - fs * 0.35, cy - fs * 0.75, tw + fs * 0.7, fs * 1.5); ctx.fillStyle = x.g[1]; } else ctx.fillStyle = x.th ? '#334155' : '#1F2340';
+          ctx.fillText(t, cx, cy);
+          if (x.sub) { ctx.font = font(false, fs * 0.72); ctx.fillStyle = '#6B7280'; const sw = ctx.measureText(x.sub).width; ctx.fillText(x.sub, (x0 + x1 - sw) / 2, cy + fs * 0.85); }
+        });
+      };
+      const drawHead = () => { for (let r = 0; r < G.head; r++) { drawRow(r); y += rh; } };
+      newPage(true); drawHead();
+      for (let r = G.head; r < G.nrow; r++) {
+        if (y + rh > PH - M) { newPage(false); drawHead(); }
+        drawRow(r); y += rh;
+      }
+      if (legend && legend.length) {
+        y += fs; ctx.font = font(false, fs * 0.9);
+        legend.forEach(line => {
+          if (y + fs * 1.4 > PH - M) { newPage(false); ctx.font = font(false, fs * 0.9); }
+          ctx.fillStyle = '#334155'; let t = line; while (t.length > 1 && ctx.measureText(t).width > W) t = t.slice(0, -2) + '…';
+          ctx.fillText(t, M, y + fs * 0.7); y += fs * 1.4;
+        });
+      }
+      return { pages, landscape };
+    }
+    /* мінімальний PDF: кожна сторінка — одне JPEG-зображення (DCTDecode) */
+    function build(pages, landscape) {
+      const enc = new TextEncoder(), parts = [], offs = []; let len = 0;
+      const push = b => { const u = typeof b === 'string' ? enc.encode(b) : b; parts.push(u); len += u.length; };
+      const obj = (n, body) => { offs[n] = len; push(`${n} 0 obj\n`); body.forEach(push); push('\nendobj\n'); };
+      const PWp = landscape ? 841.89 : 595.28, PHp = landscape ? 595.28 : 841.89, n = pages.length;
+      push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+      obj(1, ['<< /Type /Catalog /Pages 2 0 R >>']);
+      obj(2, [`<< /Type /Pages /Count ${n} /Kids [${pages.map((_, i) => (3 + i * 3) + ' 0 R').join(' ')}] >>`]);
+      pages.forEach((cv, i) => {
+        const p = 3 + i * 3, b64 = cv.toDataURL('image/jpeg', 0.92).split(',')[1], bin = atob(b64), img = new Uint8Array(bin.length);
+        for (let j = 0; j < bin.length; j++) img[j] = bin.charCodeAt(j);
+        const cs = `q ${PWp} 0 0 ${PHp} 0 0 cm /Im0 Do Q`;
+        obj(p, [`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PWp} ${PHp}] /Resources << /XObject << /Im0 ${p + 2} 0 R >> >> /Contents ${p + 1} 0 R >>`]);
+        obj(p + 1, [`<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`]);
+        obj(p + 2, [`<< /Type /XObject /Subtype /Image /Width ${cv.width} /Height ${cv.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${img.length} >>\nstream\n`, img, '\nendstream']);
+      });
+      const total = 3 + n * 3, xref = len;
+      push(`xref\n0 ${total}\n0000000000 65535 f \n`);
+      for (let i = 1; i < total; i++) push(String(offs[i]).padStart(10, '0') + ' 00000 n \n');
+      push(`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+      return new Blob(parts, { type: 'application/pdf' });
+    }
+    return { render, build };
+  })();
   async function journalExport(el, title, mode, fname) {
     if (!el) return;
     const landscape = journalLandscape(el), html = journalDoc(el, title, landscape);
-    const printIt = () => {
-      const fr = document.createElement('iframe'); fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'; document.body.appendChild(fr);
-      const d = fr.contentWindow.document; d.open(); d.write(html); d.close();
-      setTimeout(() => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { /* друк заблоковано */ } setTimeout(() => fr.remove(), 60000); }, 300);
-    };
+    const printIt = () => printHtml(html);
     if (mode === 'print') return printIt();
-    toast('Готуємо PDF (' + (landscape ? 'альбомна' : 'книжкова') + ' орієнтація)…');
     try {
-      const h2p = await loadHtml2pdf();
-      const box = document.createElement('div'); box.style.cssText = `position:fixed;left:-10000px;top:0;width:${landscape ? 1080 : 760}px;background:#fff;padding:0`;
-      const doc = new DOMParser().parseFromString(html, 'text/html');
-      box.innerHTML = `<style>${PRINT_CSS}</style>` + doc.body.innerHTML; document.body.appendChild(box);
-      await h2p().set({ margin: 8, filename: fname || 'zhurnal.pdf', image: { type: 'jpeg', quality: 0.96 }, html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: landscape ? 'landscape' : 'portrait' }, pagebreak: { mode: ['css', 'legacy'], avoid: 'tr' } }).from(box).save();
-      box.remove();
+      const table = el.querySelector('table');
+      const legend = [...el.querySelectorAll('.j-legend span')].map(x => x.textContent.replace(/\s+/g, ' ').trim());
+      const { pages } = PDFGEN.render({ table, title, subtitle: 'Сформовано ' + new Date().toLocaleDateString('uk-UA') + ' · ' + (landscape ? 'альбомна' : 'книжкова') + ' орієнтація', legend, landscape });
+      const blob = PDFGEN.build(pages, landscape);
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname || 'zhurnal.pdf'; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 5000);
+      toast('PDF збережено (' + (landscape ? 'альбомна' : 'книжкова') + ' орієнтація, сторінок: ' + pages.length + ')');
     } catch (e) {
-      toast('Бібліотеку PDF не завантажено — відкриваю друк: оберіть «Зберегти як PDF»');
-      printIt();
+      console.warn(e); toast('Не вдалося створити PDF — відкриваю друк: оберіть «Зберегти як PDF»'); printIt();
     }
   }
   async function renderJournal(clsArg, courseArg, tabsHtml) {
@@ -2492,7 +2587,7 @@
           Нові матеріали за PDF підручника готує Claude — після цього вони з’являться в списку.
           Якщо видалити предмет, результати учнів у базі не зникають: поверніть предмет із тими самими матеріалами — і оцінки знову буде видно.
         </div>
-        <div class="adm-tools"><button class="btn light sm" id="admOpenAll">Розгорнути всі</button><button class="btn light sm" id="admCloseAll">Згорнути всі</button></div>
+        <div class="adm-tools"><button class="btn light sm" id="admOpenAll">Розгорнути всі</button><button class="btn light sm" id="admCloseAll">Згорнути всі</button><button class="btn light sm" id="admSortAll" title="Упорядкувати предмети в кожному класі за алфавітом">🔤 Усі класи за алфавітом</button></div>
         <div class="adm-grid">${draft.map((k, ki) => `
           <details class="card adm-class ${k.hidden ? 'is-hidden' : ''}" data-ki="${ki}" ${openCls.has(k.cls) ? 'open' : ''}>
             <summary class="adm-head">
@@ -2515,7 +2610,7 @@
                   <label class="adm-check" title="Учні не бачитимуть предмет"><input type="checkbox" ${sj.hidden ? 'checked' : ''} data-k="${ki}" data-s="${si}" data-f="hidden"> Приховати</label>
                 </div>`).join('') : '<p class="muted" style="font-weight:700">Предметів ще немає</p>'}
             </div>
-            <div class="adm-foot"><button class="btn light sm" data-addsub="${ki}">＋ Додати предмет</button><button class="btn danger sm" data-delcls="${ki}">🗑 Видалити клас</button></div>
+            <div class="adm-foot"><button class="btn light sm" data-addsub="${ki}">＋ Додати предмет</button><button class="btn light sm" data-sortcls="${ki}" ${k.subjects.length > 1 ? '' : 'disabled'} title="Упорядкувати предмети класу за алфавітом">🔤 За алфавітом</button><button class="btn danger sm" data-delcls="${ki}">🗑 Видалити клас</button></div>
           </details>`).join('')}</div>`;
       $app.querySelectorAll('details.adm-class').forEach(d => d.addEventListener('toggle', () => { const c = draft[+d.dataset.ki].cls; d.open ? openCls.add(c) : openCls.delete(c); }));
       $app.querySelector('#admOpenAll').onclick = () => { draft.forEach(k => openCls.add(k.cls)); $app.querySelectorAll('details.adm-class').forEach(d => (d.open = true)); };
@@ -2567,6 +2662,11 @@
           await Store.saveCatalog(clean); applyCatalog(clean); draft = exportCatalog(); dirty = false; draw(); toast('Предмети збережено');
         } catch (er) { b.disabled = false; b.textContent = '💾 Зберегти зміни'; toast('Помилка: ' + er.message); }
         return;
+      }
+      if (b.id === 'admSortAll' || b.dataset.sortcls !== undefined) {
+        const byName = (x, y) => String(x.name || '').localeCompare(String(y.name || ''), 'uk', { sensitivity: 'base' });
+        (b.id === 'admSortAll' ? draft : [draft[+b.dataset.sortcls]]).forEach(k => { if (b.id !== 'admSortAll') openCls.add(k.cls); k.subjects.sort(byName); });
+        mark(); draw(); toast(b.id === 'admSortAll' ? 'Предмети всіх класів упорядковано за алфавітом' : 'Предмети класу упорядковано за алфавітом'); return;
       }
       if (b.dataset.addsub !== undefined) {
         const k = draft[+b.dataset.addsub];
