@@ -22,29 +22,43 @@ window.CATALOG = [
   ]},
   { cls: 5, color: '#14B8C4', subjects: [
     { id: 'informatics5', name: 'Інформатика', icon: '💻', ready: true },
-    { id: 'math5', name: 'Математика', icon: '➗', ready: true }
+    { id: 'math5', name: 'Математика', icon: '➗', ready: true },
+    { id: 'civic5', name: 'Вступ до історії України та громадянської освіти', icon: '📜', ready: true },
+    { id: 'nature5', name: 'Пізнаємо природу', icon: '🌿', ready: true }
   ]},
   { cls: 6, color: '#3B82F6', subjects: [
     { id: 'informatics6', name: 'Інформатика', icon: '💻', ready: true },
     { id: 'math6', name: 'Математика', icon: '➗', ready: true },
-    { id: 'histint6', name: 'Історія України. Всесвітня історія', icon: '🏛', ready: true }
+    { id: 'histint6', name: 'Історія України. Всесвітня історія', icon: '🏛', ready: true },
+    { id: 'geo6', name: 'Географія', icon: '🌍', ready: true },
+    { id: 'nature6', name: 'Пізнаємо природу', icon: '🌿', ready: true }
   ]},
   { cls: 7, color: '#6366F1', subjects: [
     { id: 'informatics7', name: 'Інформатика', icon: '💻', ready: true },
     { id: 'physics7', name: 'Фізика', icon: '🔭', ready: true },
-    { id: 'histua7', name: 'Історія України', icon: '🇺🇦', ready: true }
+    { id: 'histua7', name: 'Історія України', icon: '🇺🇦', ready: true },
+    { id: 'histw7', name: 'Всесвітня історія', icon: '🏰', ready: true },
+    { id: 'geo7', name: 'Географія', icon: '🗺', ready: true },
+    { id: 'civic7', name: 'Громадянська освіта', icon: '🤝', ready: true }
   ]},
   { cls: 8, color: '#A855F7', subjects: [
     { id: 'informatics8', name: 'Інформатика', icon: '💻', ready: true },
     { id: 'physics8', name: 'Фізика', icon: '🔭', ready: true },
     { id: 'business8', name: 'Підприємництво', icon: '💼', ready: true },
-    { id: 'histua8', name: 'Історія України', icon: '🇺🇦', ready: true }
+    { id: 'histua8', name: 'Історія України', icon: '🇺🇦', ready: true },
+    { id: 'histw8', name: 'Всесвітня історія', icon: '🧭', ready: true },
+    { id: 'geo8', name: 'Географія', icon: '🇺🇦', ready: true },
+    { id: 'civic8', name: 'Громадянська освіта', icon: '🤝', ready: true }
   ]},
   { cls: 9, color: '#EC4899', subjects: [
     { id: 'informatics9', name: 'Інформатика', icon: '💻', ready: true },
     { id: 'physics9', name: 'Фізика', icon: '🔭', ready: true },
     { id: 'business9', name: 'Підприємництво', icon: '💼', ready: true },
-    { id: 'histua9', name: 'Історія України', icon: '🇺🇦', ready: true }
+    { id: 'histua9', name: 'Історія України', icon: '🇺🇦', ready: true },
+    { id: 'histw9', name: 'Всесвітня історія', icon: '🏭', ready: true },
+    { id: 'geo9', name: 'Географія', icon: '🌐', ready: true },
+    { id: 'civic9', name: 'Громадянська освіта', icon: '🤝', ready: true },
+    { id: 'law9', name: 'Правознавство', icon: '⚖️', ready: true }
   ]}
 ];
 
@@ -69,5 +83,19 @@ window.AVAILABLE_COURSES = [
   { id: 'histua7', subject: 'Історія України', title: 'Історія України, 7 клас — І. Щупак та ін., УОВЦ «Оріон», 2024' },
   { id: 'histua8', subject: 'Історія України', title: 'Історія України, 8 клас — І. Щупак та ін., УОВЦ «Оріон», 2025' },
   { id: 'histua9', subject: 'Історія України', title: 'Історія України, 9 клас — А. Галімов та ін., Видавництво «Ранок», 2026' },
-  { id: 'histint6', subject: 'Історія України. Всесвітня історія', title: 'Історія України. Всесвітня історія, 6 клас — І. Щупак та ін., УОВЦ «Оріон», 2023' }
+  { id: 'histint6', subject: 'Історія України. Всесвітня історія', title: 'Історія України. Всесвітня історія, 6 клас — І. Щупак та ін., УОВЦ «Оріон», 2023' },
+  { id: 'histw7', subject: 'Всесвітня історія', title: 'Всесвітня історія, 7 клас — І. Щупак та ін., УОВЦ «Оріон», 2024' },
+  { id: 'histw8', subject: 'Всесвітня історія', title: 'Всесвітня історія, 8 клас — І. Щупак та ін., УОВЦ «Оріон», 2025' },
+  { id: 'histw9', subject: 'Всесвітня історія', title: 'Всесвітня історія, 9 клас — О. Гісем та ін., Видавництво «Ранок», 2026' },
+  { id: 'geo6', subject: 'Географія', title: 'Географія, 6 клас — С. Запотоцький та ін., Астон, 2023' },
+  { id: 'geo7', subject: 'Географія', title: 'Географія, 7 клас — В. Бойко та ін., Перун, 2024' },
+  { id: 'geo8', subject: 'Географія', title: 'Географія, 8 клас — В. Бойко та ін., Перун, 2025' },
+  { id: 'geo9', subject: 'Географія', title: 'Географія, 9 клас — С. Запотоцький та ін., Астон, 2026' },
+  { id: 'civic5', subject: 'Вступ до історії України та громадянської освіти', title: 'Вступ до історії України та громадянської освіти, 5 клас — О. Мокрогуз та ін., ВЦ «Академія», 2023' },
+  { id: 'civic7', subject: 'Громадянська освіта', title: 'Громадянська освіта, 7 клас — О. Охредько та ін., Ранок, 2026' },
+  { id: 'civic8', subject: 'Громадянська освіта', title: 'Громадянська освіта, 8 клас — О. Пометун та ін., Видавничий дім «Освіта», 2025' },
+  { id: 'civic9', subject: 'Громадянська освіта', title: 'Громадянська освіта, 9 клас — О. Охредько та ін., Ранок, 2026' },
+  { id: 'law9', subject: 'Правознавство', title: 'Правознавство, 9 клас — С. Берендєєв та ін., Ранок, 2026' },
+  { id: 'nature5', subject: 'Пізнаємо природу', title: 'Пізнаємо природу, 5 клас — Д. Біда та ін., Генеза, 2023' },
+  { id: 'nature6', subject: 'Пізнаємо природу', title: 'Пізнаємо природу, 6 клас — Т. Гільберг та ін., Генеза, 2023' }
 ];

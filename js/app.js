@@ -93,7 +93,14 @@
   const isTeacher = () => !!user && user.role === 'teacher';
   const isStaff = () => isAdmin() || isTeacher();
   /* id курсів (разом з архівними виданнями), доступних вчителю */
-  const canCourse = id => !isTeacher() || (user.subjects || []).includes(id);
+  /* курс доступний вчителю, якщо в його профілі є будь-який id цього предмета (ключ, курс або архівне видання):
+     після підключення курсу до предмета id предмета змінюється, а в профілі вчителя може лишатися старий ключ */
+  const canCourse = id => !isTeacher() || (user.subjects || []).includes(id)
+    || CATALOG.some(k => k.subjects.some(s => subjectIds(s).includes(id) && canSubject(s)));
+  /* доповнює список id вчителя всіма id його предметів (для правил бази); null — змін немає */
+  const healSubjects = list => { const have = new Set(list || []), add = new Set(have);
+    CATALOG.forEach(k => k.subjects.forEach(s => { const ids = subjectIds(s); if (ids.some(x => have.has(x))) ids.forEach(x => add.add(x)); }));
+    return add.size > have.size ? [...add] : null; };
   const canSubject = s => !isTeacher() || [s.id, s.key, s.course].concat((s.archive || []).map(a => a.course)).some(x => x && user.subjects.includes(x));
   const visibleSubjects = k => (k.hidden && user && user.role === 'student') ? [] : k.subjects.filter(s => !(s.hidden && user && user.role === 'student') && canSubject(s))
     .slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'uk'));
@@ -1083,7 +1090,7 @@
   const simsFlat = sims => Object.keys(sims).sort((a, b) => a - b).flatMap(n => sims[n].map((x, i) => ({ n: +n, i, x })));
   /* ---- лабораторні роботи (фізика 7–9) ---- */
   async function loadLabs(id) {
-    if (!/^(physics[789]|nature[56]|geo[6789])$/.test(id)) return [];
+    if (!/^(physics[789]|nature[56]|geo[6789]|civic[79]|law9)$/.test(id)) return [];
     try { if (!window.Labs) await loadScript('js/labs.js'); if (!Labs.has(id)) await loadScript(`js/labs/${id}.js`); } catch (e) { console.warn('labs', e); return []; }
     return Labs.list(id);
   }
@@ -2169,6 +2176,11 @@
   async function renderTeachers() {
     $app.innerHTML = '<div class="loader"><span></span></div>';
     let teachers = await Store.listTeachers();
+    /* автовиправлення: якщо до предмета підключили новий курс, додаємо його id вчителям цього предмета */
+    let healed = 0;
+    for (const t of teachers) { const fix = !t.pending && healSubjects(t.subjects); if (!fix) continue;
+      try { await Store.updateTeacher(t.uid, { subjects: fix }); t.subjects = fix; healed++; } catch (e) { /* немає прав */ } }
+    if (healed) toast('Оновлено доступ до нових курсів: ' + healed + ' вч.');
     const draw = () => {
       const pending = teachers.filter(t => t.pending), active = teachers.filter(t => !t.pending && !t.disabled), off = teachers.filter(t => !t.pending && t.disabled);
       const by = a => a.slice().sort((x, y) => String(x.name).localeCompare(String(y.name), 'uk'));
