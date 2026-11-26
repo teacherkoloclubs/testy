@@ -25,7 +25,8 @@
       const { ctx } = st; st.clear('#FBFAFF');
       ctx.strokeStyle = C.ink; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(30, 150); ctx.lineTo(610, 150); ctx.stroke();
       const step = cfg.tick || (to - from > 800 ? 100 : to - from > 200 ? 50 : to - from > 60 ? 10 : 5);
-      for (let y = Math.ceil(from / step) * step; y <= to; y += step) { ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(X(y), 144); ctx.lineTo(X(y), 156); ctx.stroke(); text(ctx, String(y), X(y), 172, { size: 10, align: 'center', color: C.mute }); }
+      for (let y = Math.ceil(from / step) * step; y <= to; y += step) { ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(X(y), 144); ctx.lineTo(X(y), 156); ctx.stroke(); text(ctx, String(Math.abs(y)), X(y), 172, { size: 10, align: 'center', color: C.mute }); }
+      if (from < 0) text(ctx, to <= 0 ? 'роки до н. е.' : '← до н. е. | н. е. →', 320, 190, { size: 10, align: 'center', color: C.mute, bold: true });
       const sorted = ev.slice().sort((a, b) => a.y - b.y);
       const order = checked ? placed.slice().sort((a, b) => a.y - b.y) : placed;
       order.forEach((e, j) => {
