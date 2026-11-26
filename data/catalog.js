@@ -26,32 +26,22 @@ window.CATALOG = [
   ]},
   { cls: 6, color: '#3B82F6', subjects: [
     { id: 'informatics6', name: 'Інформатика', icon: '💻', ready: true },
-    { id: 'math6', name: 'Математика', icon: '➗', ready: true },
-    { id: 'histint6', name: 'Історія України. Всесвітня історія', icon: '🏛', ready: true },
-    { id: 'geo6', name: 'Географія', icon: '🌍', ready: true }
+    { id: 'math6', name: 'Математика', icon: '➗', ready: true }
   ]},
   { cls: 7, color: '#6366F1', subjects: [
     { id: 'informatics7', name: 'Інформатика', icon: '💻', ready: true },
     { id: 'physics7', name: 'Фізика', icon: '🔭', ready: true },
-    { id: 'histua7', name: 'Історія України', icon: '🇺🇦', ready: true },
-    { id: 'histw7', name: 'Всесвітня історія', icon: '🏰', ready: true },
-    { id: 'geo7', name: 'Географія', icon: '🗺', ready: true }
+    { id: 'histua7', name: 'Історія України', icon: '🇺🇦', ready: true }
   ]},
   { cls: 8, color: '#A855F7', subjects: [
     { id: 'informatics8', name: 'Інформатика', icon: '💻', ready: true },
     { id: 'physics8', name: 'Фізика', icon: '🔭', ready: true },
-    { id: 'business8', name: 'Підприємництво', icon: '💼', ready: true },
-    { id: 'histua8', name: 'Історія України', icon: '🇺🇦', ready: true },
-    { id: 'histw8', name: 'Всесвітня історія', icon: '🧭', ready: true },
-    { id: 'geo8', name: 'Географія', icon: '🇺🇦', ready: true }
+    { id: 'business8', name: 'Підприємництво', icon: '💼', ready: true }
   ]},
   { cls: 9, color: '#EC4899', subjects: [
     { id: 'informatics9', name: 'Інформатика', icon: '💻', ready: true },
     { id: 'physics9', name: 'Фізика', icon: '🔭', ready: true },
-    { id: 'business9', name: 'Підприємництво', icon: '💼', ready: true },
-    { id: 'histua9', name: 'Історія України', icon: '🇺🇦', ready: true },
-    { id: 'histw9', name: 'Всесвітня історія', icon: '🏭', ready: true },
-    { id: 'geo9', name: 'Географія', icon: '🌐', ready: true }
+    { id: 'business9', name: 'Підприємництво', icon: '💼', ready: true }
   ]}
 ];
 
@@ -73,15 +63,5 @@ window.AVAILABLE_COURSES = [
   { id: 'math6', subject: 'Математика', title: 'Математика, 6 клас — Мерзляк, Полонський, Якір, «Гімназія», 2023 (ч. 1–2)' },
   { id: 'business8', subject: 'Підприємництво', title: 'Підприємництво і фінансова грамотність, 8 клас — Гільберг, Суховій, «Генеза», 2025' },
   { id: 'business9', subject: 'Підприємництво', title: 'Підприємництво і фінансова грамотність, 9 клас — Гільберг, Суховій, «Генеза», 2026' },
-  { id: 'histua7', subject: 'Історія України', title: 'Історія України, 7 клас — І. Щупак та ін., УОВЦ «Оріон», 2024' },
-  { id: 'histua8', subject: 'Історія України', title: 'Історія України, 8 клас — І. Щупак та ін., УОВЦ «Оріон», 2025' },
-  { id: 'histua9', subject: 'Історія України', title: 'Історія України, 9 клас — А. Галімов та ін., Видавництво «Ранок», 2026' },
-  { id: 'histint6', subject: 'Історія України. Всесвітня історія', title: 'Історія України. Всесвітня історія, 6 клас — І. Щупак та ін., УОВЦ «Оріон», 2023' },
-  { id: 'histw7', subject: 'Всесвітня історія', title: 'Всесвітня історія, 7 клас — І. Щупак та ін., УОВЦ «Оріон», 2024' },
-  { id: 'histw8', subject: 'Всесвітня історія', title: 'Всесвітня історія, 8 клас — І. Щупак та ін., УОВЦ «Оріон», 2025' },
-  { id: 'histw9', subject: 'Всесвітня історія', title: 'Всесвітня історія, 9 клас — О. Гісем та ін., Видавництво «Ранок», 2026' },
-  { id: 'geo6', subject: 'Географія', title: 'Географія, 6 клас — С. Запотоцький та ін., Астон, 2023' },
-  { id: 'geo7', subject: 'Географія', title: 'Географія, 7 клас — В. Бойко та ін., Перун, 2024' },
-  { id: 'geo8', subject: 'Географія', title: 'Географія, 8 клас — В. Бойко та ін., Перун, 2025' },
-  { id: 'geo9', subject: 'Географія', title: 'Географія, 9 клас — С. Запотоцький та ін., Астон, 2026' }
+  { id: 'histua7', subject: 'Історія України', title: 'Історія України, 7 клас — І. Щупак та ін., УОВЦ «Оріон», 2024' }
 ];
