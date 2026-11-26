@@ -30,7 +30,8 @@ window.CATALOG = [
   ]},
   { cls: 7, color: '#6366F1', subjects: [
     { id: 'informatics7', name: 'Інформатика', icon: '💻', ready: true },
-    { id: 'physics7', name: 'Фізика', icon: '🔭', ready: true }
+    { id: 'physics7', name: 'Фізика', icon: '🔭', ready: true },
+    { id: 'histua7', name: 'Історія України', icon: '🇺🇦', ready: true }
   ]},
   { cls: 8, color: '#A855F7', subjects: [
     { id: 'informatics8', name: 'Інформатика', icon: '💻', ready: true },
@@ -61,5 +62,6 @@ window.AVAILABLE_COURSES = [
   { id: 'math5', subject: 'Математика', title: 'Математика, 5 клас — Мерзляк, Полонський, Якір, «Гімназія», 2022' },
   { id: 'math6', subject: 'Математика', title: 'Математика, 6 клас — Мерзляк, Полонський, Якір, «Гімназія», 2023 (ч. 1–2)' },
   { id: 'business8', subject: 'Підприємництво', title: 'Підприємництво і фінансова грамотність, 8 клас — Гільберг, Суховій, «Генеза», 2025' },
-  { id: 'business9', subject: 'Підприємництво', title: 'Підприємництво і фінансова грамотність, 9 клас — Гільберг, Суховій, «Генеза», 2026' }
+  { id: 'business9', subject: 'Підприємництво', title: 'Підприємництво і фінансова грамотність, 9 клас — Гільберг, Суховій, «Генеза», 2026' },
+  { id: 'histua7', subject: 'Історія України', title: 'Історія України, 7 клас — І. Щупак та ін., УОВЦ «Оріон», 2024' }
 ];

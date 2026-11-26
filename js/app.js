@@ -566,6 +566,7 @@
       if (p[0] === 'chat') return await renderChat(p[1], p[2], p[3]);
       if (p[0] === 'help') return renderHelp(p[1]);
       if (p[0] === 'lab') return await renderLab(p[1], p[2]);
+      if (p[0] === 'drill') return await renderDrill(p[1], p[2]);
       if (p[0] === 'teacher' && isStaff()) {
         if (p[1] === 'students') return await renderStudents();
         if (p[1] === 'results') return await renderResults(p[2], p[3], p[4]);
@@ -724,7 +725,7 @@
           ${nextT ? `<a class="btn light sm" style="margin-top:12px" href="${nextT.href}">Наступний: ${esc(nextT.short)} →</a>` : '<p style="margin-top:8px">🎉 Усі тести виконано!</p>'}` : `<p style="font-size:14px">${lessons.length} ${plural(lessons.length, 'урок', 'уроки', 'уроків')} · ${course.sections.length} ${plural(course.sections.length, 'розділ', 'розділи', 'розділів')}</p>`}
         </div><div class="big-ico">${meta.icon}</div>
       </div>
-      ${hasUnits(id) ? unitsCard(id, results) : ''}${hasKr(id) ? krCard(id, results) : ''}${simsCount(sims) ? simsCard(id, sims) : ''}${labs.length ? labsCard(id, labs) : ''}
+      ${hasUnits(id) ? unitsCard(id, results) : ''}${hasKr(id) ? krCard(id, results) : ''}${simsCount(sims) ? simsCard(id, sims) : ''}${labs.length ? labsCard(id, labs) : ''}${drillCard(id, course)}
       ${course.sections.map(s => `
         <section class="section-block">
           <div class="section-head"><span class="sn" style="--sc:${s.color || meta.color}">${s.n}</span><h2>${esc(s.title)}</h2><span class="tag">${s.lessons.length} ${plural(s.lessons.length, 'урок', 'уроки', 'уроків')}</span></div>
@@ -890,6 +891,93 @@
 
   /* ---------------- тест «Префікси та одиниці вимірювання» (фізика) ---------------- */
   const hasUnits = id => /^physics/.test(id || '') && !!window.UNITS_TEST;
+  /* ---- 🎯 тренажер базових знань: терміни, дати, поняття — з теорії курсу ---- */
+  const DRILL_COURSES = /^(hist|geo|civic|law|nature)/;
+  function drillCard(id, course) {
+    if (!DRILL_COURSES.test(id)) return '';
+    return `<a class="card lesson-row summary-row units-row sims-card" href="#/drill/${id}">
+      <span class="ln">🎯</span>
+      <div><h3>Тренажер базових знань</h3><div class="meta">Терміни, дати та поняття курсу · короткі раунди по 10 завдань · можна проходити скільки завгодно</div></div>
+      <div class="lesson-actions"><span class="btn brand sm">Тренуватися</span></div></a>`;
+  }
+  async function drillItems(id, course) {
+    await Promise.all(course.sections.map(s => loadScript(`data/courses/${id}/t${s.n}.js`).catch(() => null)));
+    const th = (window.THEORY || {})[id] || {}, terms = [], dates = [], facts = [];
+    const strip = t => String(t || '').replace(/\*\*|==/g, '').replace(/_\{([^}]*)\}/g, '$1').replace(/\^\{([^}]*)\}/g, '$1').trim();
+    course.sections.forEach(sec => sec.lessons.forEach(l => (th[l.id] || []).forEach(sl => {
+      const base = { sec: sec.n, lid: l.id, ln: l.n };
+      if (sl.type === 'tdef' && sl.def && sl.term) { const k = strip(sl.term), first = k.split(/[\s(]/)[0]; let v = strip(sl.def).replace(/^[^—]{0,60}—\s*/, ''); if (first.length > 3) v = v.split(first).join('…'); terms.push(Object.assign({ k, v }, base)); }
+      if (sl.type === 'ttime') (sl.items || []).forEach(([y, ev]) => { if (y && ev && /\d/.test(y)) dates.push(Object.assign({ k: strip(y), v: strip(ev) }, base)); });
+      if (sl.type === 'tmap' || sl.type === 'tgrid') (sl.items || []).forEach(([e, n, d]) => { if (n && d && d.length > 6 && d !== '·') facts.push(Object.assign({ k: strip(n), v: strip(d), h: strip(sl.h || sl.center || '') }, base)); });
+    })));
+    return { terms, dates, facts };
+  }
+  async function renderDrill(id, secArg) {
+    const meta = catalogSubject(id);
+    if (!meta || (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) || !canCourse(meta.id)) { location.hash = '#/'; return; }
+    $app.innerHTML = '<div class="loader"><span></span></div>';
+    const course = await loadCourse(id); const all = await drillItems(id, course);
+    const pick = a => a[Math.floor(Math.random() * a.length)];
+    const shuf = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    let mode = 'mix', sec = secArg ? +secArg : 0, round = null, best = +(localStorage.getItem('drillBest:' + id) || 0);
+    const pool = kind => (all[kind] || []).filter(x => !sec || x.sec === sec);
+    const make = () => {
+      const kinds = mode === 'mix' ? ['terms', 'dates', 'facts'] : [mode];
+      const tasks = [];
+      for (let i = 0; i < 40 && tasks.length < 10; i++) {
+        const kind = pick(kinds.filter(k => pool(k).length >= 4)); if (!kind) break;
+        const P = pool(kind), it = pick(P), other = shuf((all[kind]).filter(x => x.v !== it.v && x.k !== it.k));
+        if (other.length < 3) continue;
+        const rev = Math.random() < 0.5;
+        let q, right, wrong;
+        if (kind === 'terms') { if (rev) { q = `Що означає поняття «${it.k}»?`; right = it.v; wrong = other.slice(0, 3).map(x => x.v); } else { q = `Яке поняття визначено так: «${it.v}»?`; right = it.k; wrong = other.slice(0, 3).map(x => x.k); } }
+        else if (kind === 'dates') { if (rev) { q = `Коли: ${it.v}?`; right = it.k; wrong = [...new Set(other.map(x => x.k))].filter(x => x !== it.k).slice(0, 3); } else { q = `Що сталося: ${it.k}?`; right = it.v; wrong = other.slice(0, 3).map(x => x.v); } }
+        else { q = rev ? `«${it.k}» — це…` : `${it.h ? it.h + ': ' : ''}про що йдеться — «${it.v}»?`; right = rev ? it.v : it.k; wrong = other.slice(0, 3).map(x => rev ? x.v : x.k); }
+        if (wrong.length < 3 || tasks.some(t => t.q === q)) continue;
+        tasks.push({ q, right, opts: shuf([right].concat(wrong)), it, kind });
+      }
+      return tasks;
+    };
+    const cnt = k => pool(k).length;
+    const head = () => `<div class="crumbs"><a href="#/course/${id}">${esc(meta.name)} · ${meta.cls} клас</a><span>›</span><span>Тренажер</span></div>
+      <div class="course-hero" style="--c:${meta.color}"><div><h1>🎯 Тренажер базових знань</h1><p>Короткі раунди по 10 завдань: терміни, дати, поняття курсу «${esc(meta.name)}». Тренажер не впливає на оцінки — тренуйся, доки не відповідатимеш без помилок!</p></div><div class="big-ico">🧠</div></div>`;
+    const drawStart = () => {
+      $app.innerHTML = head() + `<div class="card pad drill-setup">
+        <div class="field"><label>Що тренуємо</label><div class="sim-seg">${[['mix', '🎲 Усе разом'], ['terms', '📖 Терміни (' + cnt('terms') + ')'], ['dates', '📅 Дати (' + cnt('dates') + ')'], ['facts', '💡 Поняття й факти (' + cnt('facts') + ')']].filter(([k]) => k === 'mix' || cnt(k) >= 4).map(([k, t]) => `<button type="button" data-mode="${k}" class="${mode === k ? 'on' : ''}">${t}</button>`).join('')}</div></div>
+        <div class="field"><label>Розділ</label><select class="input" id="dSec"><option value="0">Увесь курс</option>${course.sections.map(s => `<option value="${s.n}" ${sec === s.n ? 'selected' : ''}>Розділ ${s.n}. ${esc(s.title)}</option>`).join('')}</select></div>
+        <p class="muted" style="font-weight:700">Найкращий результат: <b>${best}/10</b></p>
+        <button class="btn brand" id="dGo">▶ Почати раунд</button></div>`;
+      $app.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { mode = b.dataset.mode; drawStart(); });
+      $app.querySelector('#dSec').onchange = e => { sec = +e.target.value; drawStart(); };
+      $app.querySelector('#dGo').onclick = () => { const t = make(); if (t.length < 4) { toast('Замало матеріалу для цього вибору — оберіть «Усе разом» або весь курс'); return; } round = { t, i: 0, ok: 0, streak: 0, wrong: [] }; drawQ(); };
+    };
+    const drawQ = () => {
+      const r = round, t = r.t[r.i];
+      $app.innerHTML = head() + `<div class="card pad drill-q"><div class="drill-top"><span>Завдання ${r.i + 1} з ${r.t.length}</span><span>✅ ${r.ok} · 🔥 ${r.streak}</span></div>
+        <div class="progress-line"><i style="width:${r.i / r.t.length * 100}%"></i></div>
+        <h2 class="drill-h">${esc(t.q)}</h2><div class="drill-opts">${t.opts.map((o, k) => `<button class="drill-opt" data-k="${k}">${esc(o)}</button>`).join('')}</div>
+        <div class="drill-fb" hidden></div></div>`;
+      $app.querySelectorAll('.drill-opt').forEach(b => b.onclick = () => {
+        if (r.done) return; r.done = true; const ok = t.opts[+b.dataset.k] === t.right;
+        $app.querySelectorAll('.drill-opt').forEach(x => { x.disabled = true; if (t.opts[+x.dataset.k] === t.right) x.classList.add('ok'); });
+        if (!ok) { b.classList.add('bad'); r.wrong.push(t); r.streak = 0; } else { r.ok++; r.streak++; }
+        const fb = $app.querySelector('.drill-fb'); fb.hidden = false;
+        fb.innerHTML = `${ok ? '✅ Правильно!' : '❌ Правильна відповідь виділена зеленим.'} <small class="muted">§ ${t.it.ln}</small> <button class="btn brand sm" id="dNext">${r.i + 1 < r.t.length ? 'Далі →' : 'Результат'}</button>`;
+        fb.querySelector('#dNext').onclick = () => { r.done = false; r.i++; r.i < r.t.length ? drawQ() : drawEnd(); };
+      });
+    };
+    const drawEnd = () => {
+      const r = round; if (r.ok > best) { best = r.ok; try { localStorage.setItem('drillBest:' + id, best); } catch (e) {} }
+      $app.innerHTML = head() + `<div class="card pad drill-end"><div class="m-emoji">${r.ok >= 9 ? '🏆' : r.ok >= 6 ? '👍' : '💪'}</div><h2>${r.ok} з ${r.t.length}</h2>
+        <p class="muted" style="font-weight:700">${r.ok >= 9 ? 'Чудово! Ти добре знаєш матеріал.' : r.ok >= 6 ? 'Непогано! Повтори помилки й спробуй ще раз.' : 'Варто повторити теорію — і повернутися до тренажера.'}</p>
+        ${r.wrong.length ? `<h3 class="rs-h">Повтори</h3><ul class="rs-list">${r.wrong.map(w => `<li><b>${esc(w.it.k)}</b> — ${esc(w.it.v)} <a href="#/slides/${id}/${w.it.lid}">§ ${w.it.ln} →</a></li>`).join('')}</ul>` : ''}
+        <div class="m-actions"><button class="btn light" id="dSet">⚙️ Налаштування</button><button class="btn brand" id="dAgain">🔁 Ще раунд</button></div></div>`;
+      $app.querySelector('#dAgain').onclick = () => { const t = make(); round = { t, i: 0, ok: 0, streak: 0, wrong: [] }; drawQ(); };
+      $app.querySelector('#dSet').onclick = drawStart;
+    };
+    if (all.terms.length + all.dates.length + all.facts.length < 8) { $app.innerHTML = head() + '<div class="card empty"><span class="e">🎯</span>Тренажер для цього курсу ще готується.</div>'; return; }
+    drawStart();
+  }
   function unitsCard(id, results) {
     const mine = (results || []).filter(r => r.kind === 'units');
     const st = UnitsTest.stats(mine.sort((a, b) => (b.atMs || 0) - (a.atMs || 0)));
@@ -995,7 +1083,7 @@
   const simsFlat = sims => Object.keys(sims).sort((a, b) => a - b).flatMap(n => sims[n].map((x, i) => ({ n: +n, i, x })));
   /* ---- лабораторні роботи (фізика 7–9) ---- */
   async function loadLabs(id) {
-    if (!/^physics[789]$/.test(id)) return [];
+    if (!/^(physics[789]|nature[56]|geo[6789])$/.test(id)) return [];
     try { if (!window.Labs) await loadScript('js/labs.js'); if (!Labs.has(id)) await loadScript(`js/labs/${id}.js`); } catch (e) { console.warn('labs', e); return []; }
     return Labs.list(id);
   }

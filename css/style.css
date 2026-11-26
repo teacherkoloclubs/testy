@@ -839,3 +839,29 @@ tr.lab-new td { animation: labNew 1.2s ease; }
   body.lab-printing .card { box-shadow: none !important; border: 1px solid #ccc !important; break-inside: avoid; }
   body.lab-printing .lab-sample[hidden] { display: none !important; }
 }
+
+/* тренажер */
+.drill-setup .sim-seg { margin-top: 6px; }
+.drill-top { display: flex; justify-content: space-between; font-weight: 800; color: var(--muted); margin-bottom: 8px; }
+.drill-h { font-size: 1.3em; margin: 18px 0 14px; line-height: 1.4; }
+.drill-opts { display: grid; gap: 10px; }
+.drill-opt { text-align: left; padding: 14px 16px; border-radius: 14px; border: 2px solid #DAD7F5; background: #fff; font: inherit; font-weight: 700; cursor: pointer; line-height: 1.4; }
+.drill-opt:hover:not(:disabled) { border-color: var(--brand, #4F46E5); background: #F5F3FF; }
+.drill-opt.ok { border-color: #16A34A; background: #E7F8EF; } .drill-opt.bad { border-color: #E5484D; background: #FDECEC; }
+.drill-fb { margin-top: 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-weight: 800; }
+.drill-end { text-align: center; } .drill-end .rs-list { text-align: left; }
+
+/* симуляції gen: стрічка часу, сценарій, сортування */
+.tl-deck { display: flex; flex-wrap: wrap; gap: 6px; }
+.tl-card, .cl-card { border: 2px solid #DAD7F5; background: #fff; border-radius: 10px; padding: 6px 10px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; text-align: left; }
+.tl-card:hover, .cl-card:hover { border-color: var(--brand, #4F46E5); }
+.cl-card.on { border-color: var(--brand, #4F46E5); background: #EEF0FF; } .cl-card.ok { border-color: #16A34A; background: #E7F8EF; } .cl-card.bad { border-color: #E5484D; background: #FDECEC; }
+.cl-box { padding: 6px; } .cl-deck { display: flex; flex-wrap: wrap; gap: 6px; min-height: 44px; margin-bottom: 12px; }
+.cl-groups { display: grid; gap: 10px; } .cl-group { border: 2px dashed #C7C2F5; border-radius: 14px; padding: 10px; min-height: 140px; display: flex; flex-direction: column; gap: 6px; cursor: pointer; background: #FBFAFF; }
+.cl-group > b { font-size: 14px; margin-bottom: 4px; }
+.sc-box { padding: 10px 14px; min-height: 280px; } .sc-n { font-weight: 900; color: var(--brand, #4F46E5); margin-bottom: 6px; } .sc-t { font-size: 17px; line-height: 1.55; font-weight: 600; margin-bottom: 12px; }
+.sc-opts { display: grid; gap: 8px; } .sc-opt { text-align: left; padding: 12px 14px; border-radius: 12px; border: 2px solid #DAD7F5; background: #fff; font: inherit; font-weight: 700; cursor: pointer; line-height: 1.4; }
+.sc-opt.ok { border-color: #16A34A; background: #E7F8EF; } .sc-opt.bad { border-color: #F59E0B; background: #FFF8E6; }
+.sc-res { margin-top: 12px; background: #F7F6FF; border-radius: 12px; padding: 10px 12px; font-weight: 600; line-height: 1.5; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.sc-end { text-align: center; } .sc-log { text-align: left; font-size: 14px; line-height: 1.5; margin-top: 10px; }
+.geo-in { grid-column: 1 / -1; display: flex; gap: 6px; } .geo-in .input { flex: 1; min-width: 0; padding: 8px; }

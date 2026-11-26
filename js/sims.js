@@ -10,7 +10,7 @@
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const rt = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\^\{(.+?)\}/g, '<sup>$1</sup>').replace(/_\{(.+?)\}/g, '<sub>$1</sub>');
   const TYPES = {};
-  const LIB_OF = { physics: 'phys', math: 'math', informatics: 'info', business: 'biz' };
+  const LIB_OF = { physics: 'phys', math: 'math', informatics: 'info', business: 'biz', histua: 'gen', histw: 'gen', histint: 'gen', geo: 'gen', civic: 'gen', law: 'gen', nature: 'nat' };
 
   /* ---------- допоміжні елементи керування ---------- */
   const fmt = (v, d = 2) => { if (v == null || isNaN(v)) return '—'; const r = Math.round(v * Math.pow(10, d)) / Math.pow(10, d); return String(r).replace('.', ','); };
@@ -162,7 +162,8 @@
   async function open(root, o) {
     close();
     const libName = o.sim.lib || LIB_OF[(o.course.match(/^[a-z]+/) || [''])[0]] || 'phys';
-    if (!TYPES[o.sim.type]) await o.loadScript(`js/sims/${libName}.js`);
+    if (!TYPES[o.sim.type]) await o.loadScript(`js/sims/${libName}.js`).catch(() => null);
+    if (!TYPES[o.sim.type]) await o.loadScript('js/sims/gen.js').catch(() => null);
     const fn = TYPES[o.sim.type]; if (!fn) throw new Error('Симуляцію не знайдено: ' + o.sim.type);
     root.innerHTML = `${o.crumbs || ''}
       <div class="card sim-head"><div><h1>🧪 ${esc(o.sim.title)}</h1><p class="muted">${esc(o.subtitle || '')}</p></div>${o.nav || ''}</div>
