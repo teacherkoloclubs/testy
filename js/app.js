@@ -700,6 +700,7 @@
         '<b>📋 План</b> — мета уроку, етапи з хронометражем, посилання на презентацію, симуляцію й тест, творче домашнє завдання.',
         '<b>🎞 Презентація</b> — показуйте на уроці з проєктора; анімовані слайди з теорією та вправами.',
         '<b>📒 Конспект уроку</b> — стислий зміст параграфа зі схемами, опорною схемою й формулами; можна роздрукувати для учнів.',
+        '<b>📒 Журнал</b> біля параграфа відкриває журнал класу саме на цьому параграфі: кнопка <b>✍️ Виставити оцінки класу</b> дає поставити оцінки за урок усім учням одразу.',
         '<b>🧪 Симуляції</b> й <b>🔬 лабораторні роботи</b> — демонструйте на уроці або давайте учням для самостійної роботи.',
         '<b>📝 Тест</b> — учні проходять його на уроці чи вдома; ви можете переглянути тест заздалегідь.'],
         ['Дати уроків з’являються автоматично, якщо адміністратор завантажив розклад.']),
@@ -795,7 +796,7 @@
       if (p[0] === 'drill') return await renderDrill(p[1], p[2]);
       if (p[0] === 'teacher' && isStaff()) {
         if (p[1] === 'students') return await renderStudents();
-        if (p[1] === 'results') return await renderResults(p[2], p[3], p[4]);
+        if (p[1] === 'results') return await renderResults(p[2], p[3], p[4], p[5]);
         if (p[1] === 'subjects' && isAdmin()) return renderSubjectsAdmin();
         if (p[1] === 'teachers' && isAdmin()) return await renderTeachers();
         if (p[1] === 'schedule' && isAdmin()) return await renderScheduleAdmin();
@@ -968,6 +969,7 @@
                   ${window.Games && Games.has(id, l.id) ? `<a class="btn light sm game-btn" href="#/games/${id}/${l.id}">🎮 Ігри</a>` : ''}
                   ${plans[l.id] ? (isStaff() ? `<a class="btn light sm" href="#/plan/${id}/${l.id}" title="План уроку й домашнє завдання">📋 План</a>` : (plans[l.id].hw ? `<a class="btn light sm" href="#/plan/${id}/${l.id}" title="Творче домашнє завдання">🏠 Д/з</a>` : '')) : ''}
                   ${testBtn(l.id, `#/test/${id}/lesson/${l.id}`, '📝 Тест')}
+                  ${canJournal(id) ? `<a class="btn light sm j-btn" href="${journalHref(id, l.id)}" title="Журнал класу: виставити оцінки за урок">📒 Журнал</a>` : ''}
                   ${user.role === 'student' ? g(l.id) : ''}
                   ${user.role === 'student' && bm['mark:' + l.id] && bm['mark:' + l.id].best != null ? `<span class="grade ${gradeClass(bm['mark:' + l.id].best)}" title="Оцінка за урок від учителя">✍️ ${bm['mark:' + l.id].best}</span>` : ''}
                 </div>
@@ -1151,7 +1153,7 @@
         <div class="nt-badge">${esc(pn)}</div>
         <div><p class="nt-sec">Розділ ${lesson.section.n}. ${esc(lesson.section.title)}</p><h1>📒 ${esc(lesson.title)}</h1><p class="nt-meta">Конспект уроку${lesson.pages ? ' · підручник, ' + esc(pg(lesson.pages)) : ''}</p></div>
       </div>
-      <div class="nt-tools"><a class="btn light sm" href="#/slides/${id}/${lid}">🎞 Презентація</a><a class="btn light sm" href="#/test/${id}/lesson/${lid}">📝 Тест</a><button class="btn light sm" id="ntPrint">🖨 Друк конспекту</button></div>
+      <div class="nt-tools"><a class="btn light sm" href="#/slides/${id}/${lid}">🎞 Презентація</a><a class="btn light sm" href="#/test/${id}/lesson/${lid}">📝 Тест</a>${canJournal(id) ? `<a class="btn light sm j-btn" href="${journalHref(id, lid)}">📒 Журнал</a>` : ''}<button class="btn light sm" id="ntPrint">🖨 Друк конспекту</button></div>
       <article class="nt-page" id="ntPage">${body}</article>
       <div class="nt-nav">${prev ? `<a class="btn light" href="#/notes/${id}/${prev.id}">← ${esc(navLbl(prev))}</a>` : '<span></span>'}<a class="btn light" href="#/course/${id}">До змісту</a>${next ? `<a class="btn brand" href="#/notes/${id}/${next.id}">${esc(navLbl(next))} →</a>` : '<span></span>'}</div>`;
     $app.querySelector('#ntPrint').onclick = () => {
@@ -1980,7 +1982,7 @@
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = name; a.click();
   }
 
-  async function renderResults(tab, a, b) {
+  async function renderResults(tab, a, b, c) {
     if (tab && /^\d+$/.test(tab)) { b = a; a = tab; tab = 'journal'; }
     const TABS = [['overview', '📊 Огляд'], ['all', '📋 Усі результати'], ['journal', '📒 Журнал класу'], ['subjects', '📚 За предметами'], ['classes', '🏫 За класами'], ['students', '🧑‍🎓 За учнями'], ['overdue', '⏰ Нагадування'], ['units', '📏 Одиниці (фізика)'], ['kr', '📝 Контрольні (математика)']];
     if (!TABS.some(t => t[0] === tab)) tab = ss.getItem('rsTab') || 'overview';
@@ -1988,7 +1990,7 @@
     const tabsHtml = `<div class="page-head"><div><h1>Результати</h1><p>${isAdmin() ? 'Усі класи й предмети' : 'Ваші класи й предмети'} · загальний список, журнал і статистика</p></div>
         ${tab !== 'journal' ? `<button class="btn light sm" id="rsRefresh" title="Завантажити свіжі дані">🔄 Оновити</button>` : ''}</div>
       <nav class="rs-tabs">${TABS.map(([k, t]) => `<a href="#/teacher/results/${k}" class="${k === tab ? 'on' : ''}">${t}</a>`).join('')}</nav>`;
-    if (tab === 'journal') return renderJournal(a, b, tabsHtml);
+    if (tab === 'journal') return renderJournal(a, b, tabsHtml, c);
     $app.innerHTML = tabsHtml + '<div class="loader"><span></span></div>';
     const D = await loadResultsData();
     const refresh = () => { const r = $app.querySelector('#rsRefresh'); if (r) r.onclick = async () => { RS = null; route(); }; };
@@ -2496,7 +2498,10 @@
       console.warn(e); toast('Не вдалося створити PDF — відкриваю друк: оберіть «Зберегти як PDF»'); printIt();
     }
   }
-  async function renderJournal(clsArg, courseArg, tabsHtml) {
+  /* посилання на журнал класу з оцінками за урок для параграфа */
+  const journalHref = (course, lid) => `#/teacher/results/journal/${subjInfo(course).cls}/${course}/${lid}`;
+  const canJournal = course => isStaff() && canCourse(course) && !!subjInfo(course).cls;
+  async function renderJournal(clsArg, courseArg, tabsHtml, lidArg) {
     const classes = myClasses().filter(c => visibleSubjects(c).length || isAdmin());
     const ready = classes.flatMap(k => visibleSubjects(k).filter(s => s.ready).map(s => ({ cls: k.cls, s })));
     let cls = +(clsArg || ss.getItem('rsCls') || (ready[0] && ready[0].cls) || 2);
@@ -2548,6 +2553,8 @@
         sectionAvg: avg(sb), final: best(bm, 'final'), attempts: (byUser[s.uid] || []).length };
     });
     /* вигляд журналу: «огляд» (по розділах) або окремий розділ — без горизонтальної прокрутки */
+    const focusL = lidArg ? lessons.find(l => l.id === lidArg) : null;
+    if (focusL) ss.setItem('jView:' + subj.id, 'sec' + focusL.section.n);
     let jv = ss.getItem('jView:' + subj.id) || 'all';
     if (jv !== 'all' && !course.sections.some(x => 'sec' + x.n === jv)) jv = 'all';
     const cell = e => {
@@ -2565,6 +2572,8 @@
         <div class="card stat-tile"><div class="v">${rowsData.reduce((a, r) => a + r.marks, 0)}</div><div class="k">Оцінок за уроки</div></div>
         <div class="card stat-tile"><div class="v">${rowsData.filter(r => r.final != null).length}</div><div class="k">Склали річний тест</div></div>
       </div>
+      ${focusL && list.length ? `<div class="card j-lesson-bar"><div><b>✍️ Оцінки за урок</b><span>${esc(pn(focusL))}. ${esc(focusL.title)} · ${cls} клас · ${esc(subj.name)}</span></div>
+        <div class="j-lesson-act"><button class="btn brand sm" id="jBulk">✍️ Виставити оцінки класу</button><a class="btn light sm" href="#/course/${subj.id}">← До параграфів</a></div></div>` : ''}
       ${list.length ? `<div class="fchips j-tabs"><button class="fchip ${jv === 'all' ? 'on' : ''}" data-jv="all">📊 Огляд за розділами</button>${course.sections.map(x => `<button class="fchip ${jv === 'sec' + x.n ? 'on' : ''}" data-jv="sec${x.n}" title="${esc(x.title)}">Розділ ${x.n}</button>`).join('')}</div>
         <div class="card table-wrap j-wrap" id="jPrint">${jv === 'all' ? `<div class="j-sec-title j-print-only">${esc(subj.name)} · ${cls} клас · огляд за розділами</div><table class="tbl tbl-compact">
         <thead><tr><th class="sticky-col">Учень</th><th class="c">Середній</th><th class="c">Тести</th>
@@ -2578,11 +2587,12 @@
           <td class="c">${cell(r.bm.final)}</td></tr>`).join('')}</tbody></table>`
         : (() => { const sec = course.sections.find(x => 'sec' + x.n === jv);
           return `<div class="j-sec-title">${esc(subj.name)} · ${cls} клас · Розділ ${sec.n}. ${esc(sec.title)}</div><table class="tbl tbl-compact j-sec-tbl j-mk-tbl">
-          <thead><tr><th class="sticky-col" rowspan="2">Учень</th>${sec.lessons.map(l => `<th class="c j-ph" colspan="3" title="${esc(pn(l) + '. ' + l.title)}">${esc(pn(l))}</th>`).join('')}<th class="c th-sum" rowspan="2" title="Підсумковий тест за розділ ${sec.n}">Підс.</th><th class="c" rowspan="2" title="Середній бал за параграфи розділу">Сер.</th></tr>
+          <thead><tr><th class="sticky-col" rowspan="2">Учень</th>${sec.lessons.map(l => `<th class="c j-ph ${focusL && l.id === focusL.id ? 'j-focus' : ''}" colspan="3" title="${esc(pn(l) + '. ' + l.title)}" ${focusL && l.id === focusL.id ? 'id="jFocus"' : ''}>${esc(pn(l))}</th>`).join('')}<th class="c th-sum" rowspan="2" title="Підсумковий тест за розділ ${sec.n}">Підс.</th><th class="c" rowspan="2" title="Середній бал за параграфи розділу">Сер.</th></tr>
           <tr>${sec.lessons.map(() => `<th class="c j-sub" title="Оцінка за тест">т</th><th class="c j-sub" title="Оцінка за урок">у</th><th class="c j-sub j-avg" title="Середній за параграф">сер</th>`).join('')}</tr></thead>
           <tbody>${rowsData.map(r => { const sb = sec.lessons.map(l => pAvg(r.bm, l)).filter(v => v != null);
             return `<tr><td class="sticky-col nm"><a href="javascript:void(0)" data-st="${r.s.uid}">${esc(r.s.name)}</a></td>${sec.lessons.map(l => { const pa = pAvg(r.bm, l);
-              return `<td class="c j-t">${cell(r.bm[l.id])}</td><td class="c j-u">${markCell(r, l)}</td><td class="c j-avg"><b class="j-pa ${gradeClass(pa)}">${pa ?? '·'}</b></td>`; }).join('')}
+              const fc = focusL && l.id === focusL.id ? ' j-focus' : '';
+              return `<td class="c j-t${fc}">${cell(r.bm[l.id])}</td><td class="c j-u${fc}">${markCell(r, l)}</td><td class="c j-avg${fc}"><b class="j-pa ${gradeClass(pa)}">${pa ?? '·'}</b></td>`; }).join('')}
               <td class="c">${cell(r.bm['section-' + sec.n])}</td><td class="c"><span class="cell ${gradeClass(avg(sb))}">${avg(sb) ?? '—'}</span></td></tr>`; }).join('')}</tbody></table>
           <div class="j-legend">${sec.lessons.map(l => `<span><b>${esc(pn(l))}</b> ${esc(l.title)}</span>`).join('')}</div>`; })()}</div>
         <p class="muted" style="margin-top:10px;font-size:13.5px;font-weight:700">${jv === 'all' ? 'У кожному розділі: ліворуч — середній бал за параграфи (тест + оцінка за урок), праворуч — підсумковий тест розділу. Оцінки за уроки ставляться у вкладці розділу. '
@@ -2608,13 +2618,45 @@
           try {
             for (const r of old) await Store.deleteResult(r.id);
             if (v != null) await Store.saveManualResult({ uid, name: s.name, cls: s.cls, course: subj.id, testId: 'mark:' + lid, kind: 'mark', title: 'Оцінка за урок: ' + pn(l) + '. ' + l.title, score: v, full: 0, total: 0, durationSec: 0, leaves: 0 });
-            RS = null; close(); toast(v != null ? 'Оцінку ' + v + ' збережено' : 'Оцінку прибрано'); renderJournal(clsArg, courseArg, tabsHtml);
+            RS = null; close(); toast(v != null ? 'Оцінку ' + v + ' збережено' : 'Оцінку прибрано'); renderJournal(clsArg, courseArg, tabsHtml, lidArg);
           } catch (e) { box.querySelector('#mkErr').textContent = e.message || String(e); }
         };
         box.querySelectorAll('.mk-v').forEach(x => x.onclick = () => done(+x.dataset.v));
         const del = box.querySelector('#mkDel'); if (del) del.onclick = () => done(null);
       });
     });
+    /* оцінки за урок усьому класу одразу */
+    const bulk = $app.querySelector('#jBulk');
+    if (bulk && focusL) bulk.onclick = () => {
+      const l = focusL, cur = {};
+      list.forEach(s => { const old = (byUser[s.uid] || []).filter(r => r.testId === 'mark:' + l.id); cur[s.uid] = old.length ? Math.max(...old.map(r => r.score)) : null; });
+      const val = Object.assign({}, cur);
+      modal(`<h2>✍️ Оцінки за урок</h2><p class="muted" style="font-weight:700;margin-bottom:10px">${esc(pn(l))}. ${esc(l.title)} · ${cls} клас</p>
+        <div class="jb-list">${list.map(s => { const t = best(bestMap(byUser[s.uid] || []), l.id);
+          return `<div class="jb-row" data-u="${s.uid}"><span class="jb-nm">${esc(s.name)}${t != null ? `<small>тест: <b class="${gradeClass(t)}">${t}</b></small>` : ''}</span>
+          <span class="jb-g">${Array.from({ length: 12 }, (_, i) => i + 1).map(v => `<button type="button" class="jb-v ${gradeClass(v)} ${v === cur[s.uid] ? 'on' : ''}" data-v="${v}">${v}</button>`).join('')}<button type="button" class="jb-v jb-x" data-v="" title="Без оцінки">—</button></span></div>`; }).join('')}</div>
+        <div class="form-error" id="jbErr"></div>
+        <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="jbSave">💾 Зберегти</button></div>`, (box, close) => {
+        box.querySelectorAll('.jb-row').forEach(row => row.querySelectorAll('.jb-v').forEach(b => b.onclick = () => {
+          const u = row.dataset.u, v = b.dataset.v === '' ? null : +b.dataset.v;
+          val[u] = val[u] === v ? null : v;
+          row.querySelectorAll('.jb-v').forEach(x => x.classList.toggle('on', val[u] != null && +x.dataset.v === val[u] && x.dataset.v !== ''));
+        }));
+        box.querySelector('#jbSave').onclick = async ev => {
+          const changed = list.filter(s => val[s.uid] !== cur[s.uid]);
+          if (!changed.length) { close(); return; }
+          ev.target.disabled = true; ev.target.textContent = 'Збереження…';
+          try {
+            for (const s of changed) {
+              for (const r of (byUser[s.uid] || []).filter(r => r.testId === 'mark:' + l.id)) await Store.deleteResult(r.id);
+              if (val[s.uid] != null) await Store.saveManualResult({ uid: s.uid, name: s.name, cls: s.cls, course: subj.id, testId: 'mark:' + l.id, kind: 'mark', title: 'Оцінка за урок: ' + pn(l) + '. ' + l.title, score: val[s.uid], full: 0, total: 0, durationSec: 0, leaves: 0 });
+            }
+            RS = null; close(); toast('✅ Збережено оцінок: ' + changed.length); renderJournal(clsArg, courseArg, tabsHtml, lidArg);
+          } catch (e) { ev.target.disabled = false; ev.target.textContent = '💾 Зберегти'; box.querySelector('#jbErr').textContent = e.message || String(e); }
+        };
+      }, { wide: true });
+    };
+    const jf = $app.querySelector('#jFocus'); if (jf) { const w = jf.closest('.table-wrap'); if (w) w.scrollLeft = Math.max(0, jf.offsetLeft - 200); }
     const csvBtn = $app.querySelector('#csv');
     if (csvBtn) csvBtn.onclick = () => {
       const exp = cols.flatMap(c => c.kind === 'lesson' ? [{ h: c.label + ' — тест', v: r => { const e = r.bm[c.id]; return e ? (e.best != null ? e.best : 'не зар.') : ''; } },
