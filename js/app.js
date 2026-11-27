@@ -266,6 +266,88 @@
     for (const k of CATALOG) for (const s of k.subjects) if (s.id === course) return { name: s.name, icon: s.icon || '📘', cls: k.cls };
     return { name: course, icon: '📘', cls: '' };
   }
+  /* ---- «Повідомити про помилку»: вчитель виділяє текст → коментар → адміністратору ---- */
+  const ERR_PLACE = { slides: 'Презентація', notes: 'Конспект уроку', plan: 'План уроку', test: 'Тест', kr: 'Контрольна робота', sim: 'Симуляція', sims: 'Симуляції', lab: 'Лабораторна робота', games: 'Гра', drill: 'Вправи', units: 'Одиниці вимірювання', course: 'Сторінка предмета', class: 'Сторінка класу', help: 'Інструкція', my: 'Мої результати', teacher: 'Кабінет вчителя' };
+  const errCanReport = () => user && user.role === 'teacher' && !isAdmin();
+  function errContext(sel) {
+    const hash = location.hash || '#/'; const p = hash.replace(/^#\/?/, '').split('/');
+    const ctx = { place: ERR_PLACE[p[0]] || 'Головна сторінка', url: hash };
+    const cid = ['slides', 'notes', 'plan', 'test', 'kr', 'sim', 'sims', 'lab', 'games', 'drill', 'units', 'course'].includes(p[0]) ? p[1] : '';
+    if (cid) {
+      const si = subjInfo(cid); ctx.subject = si.name; ctx.cls = si.cls ? si.cls + ' клас' : '';
+      const c = COURSES[cid]; if (c && c.title) ctx.book = c.title;
+      const lid = p[0] === 'test' ? (p[2] === 'lesson' ? p[3] : '') : ['slides', 'notes', 'plan', 'lab', 'sim', 'games', 'drill'].includes(p[0]) ? p[2] : '';
+      if (p[0] === 'test' && p[2] === 'section') ctx.lesson = 'Тест за розділом ' + (p[3] || '');
+      if (p[0] === 'test' && p[2] === 'annual') ctx.lesson = 'Річний тест';
+      if (lid && c && c.sections) { for (const s of c.sections) { const l = s.lessons.find(x => x.id === lid);
+        if (l) { const n = lessonNo(cid, lid); ctx.lesson = (n != null ? '§ ' + n + '. ' : '') + (l.title || ''); ctx.section = s.title || ''; break; } } }
+    }
+    /* найближчий заголовок біля виділеного тексту (слайд, блок конспекту, питання тесту) */
+    try { let el = sel && sel.anchorNode; el = el && (el.nodeType === 1 ? el : el.parentElement);
+      for (let k = 0; el && k < 8; k++, el = el.parentElement) {
+        const h = el.matches && el.matches('h1,h2,h3,h4') ? el : el.querySelector && el.querySelector(':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > .q-text, :scope > header h2');
+        if (h && h.textContent.trim()) { ctx.block = h.textContent.trim().slice(0, 140); break; } } } catch (e) {}
+    if (ctx.block && ctx.lesson && ctx.lesson.includes(ctx.block.replace(/^[^\p{L}\d]+/u, '').trim())) delete ctx.block;
+    return ctx;
+  }
+  function errHideBtn() { const b = document.getElementById('errBtn'); if (b) b.hidden = true; }
+  function errShowBtn() {
+    if (!errCanReport() || (location.hash || '').startsWith('#/chat')) { errHideBtn(); return; }
+    const sel = window.getSelection(); const txt = sel ? String(sel).trim() : '';
+    if (!sel || sel.isCollapsed || txt.length < 2) { errHideBtn(); return; }
+    const an = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+    if (!an || !an.closest('#app') || an.closest('input, textarea, [contenteditable], #modal')) { errHideBtn(); return; }
+    let b = document.getElementById('errBtn');
+    if (!b) { b = document.createElement('button'); b.id = 'errBtn'; b.type = 'button'; b.className = 'err-btn'; b.textContent = '⚠️ Повідомити про помилку';
+      b.addEventListener('mousedown', e => e.preventDefault());
+      b.addEventListener('click', () => errOpen()); document.body.appendChild(b); }
+    const r = sel.getRangeAt(0).getBoundingClientRect();
+    b.hidden = false;
+    const w = b.offsetWidth || 220, x = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+    const y = r.top > 54 ? r.top - 44 : r.bottom + 10;
+    b.style.left = x + 'px'; b.style.top = Math.min(window.innerHeight - 50, y) + 'px';
+    b._sel = txt.slice(0, 600); b._ctx = errContext(sel);
+  }
+  function errOpen() {
+    const b = document.getElementById('errBtn'); if (!b || !b._sel) return;
+    const selTxt = b._sel, ctx = b._ctx || errContext(null); errHideBtn();
+    const rows = () => [['Предмет', ctx.subject], ['Клас', ctx.cls], ['Розділ', ctx.section], ['Параграф', ctx.lesson], ['Сторінка', ctx.place], ['Блок', ctx.block]].filter(x => x[1]);
+    const ctxHtml = () => `<dl class="err-ctx">${rows().map(x => `<dt>${x[0]}</dt><dd>${esc(String(x[1]))}</dd>`).join('')}</dl>`;
+    let comment = '';
+    const step1 = (bx, close) => {
+      bx.innerHTML = `<h2>⚠️ Повідомити про помилку</h2>
+        <div class="field"><label>Виділений фрагмент</label><blockquote class="err-q">${esc(selTxt)}</blockquote></div>
+        ${ctxHtml()}
+        <div class="field"><label>Коментар для адміністратора</label><textarea class="input" id="errCm" rows="3" maxlength="1000" placeholder="Що не так і як має бути правильно…">${esc(comment)}</textarea></div>
+        <div class="m-actions"><button class="btn light" id="errNo">Скасувати</button><button class="btn brand" id="errNext">Надіслати…</button></div>`;
+      const t = bx.querySelector('#errCm'); t.focus();
+      bx.querySelector('#errNo').onclick = close;
+      bx.querySelector('#errNext').onclick = () => { comment = t.value.trim(); if (!comment) { t.focus(); t.classList.add('shake'); setTimeout(() => t.classList.remove('shake'), 500); toast('Напишіть коментар'); return; } step2(bx, close); };
+    };
+    const step2 = (bx, close) => {
+      bx.innerHTML = `<h2>Надіслати адміністратору?</h2>
+        <p class="muted">Перевірте повідомлення. Його отримає адміністратор порталу в чаті «Адміністратор».</p>
+        <div class="err-sum"><b>Фрагмент:</b> «${esc(selTxt.slice(0, 200))}${selTxt.length > 200 ? '…' : ''}»<br><b>Коментар:</b> ${esc(comment)}</div>${ctxHtml()}
+        <div class="m-actions"><button class="btn light" id="errBack">← Змінити</button><button class="btn brand" id="errGo">✅ Так, надіслати</button></div>`;
+      bx.querySelector('#errBack').onclick = () => step1(bx, close);
+      bx.querySelector('#errGo').onclick = async ev => {
+        ev.target.disabled = true;
+        const err = { sel: selTxt, subject: ctx.subject || '', cls: ctx.cls || '', section: ctx.section || '', lesson: ctx.lesson || '', place: [ctx.place, ctx.block].filter(Boolean).join(' · '), url: ctx.url, book: ctx.book || '' };
+        try { await Store.chatSend({ adm: true, tuid: user.uid, tname: user.name, course: '', role: 't', name: user.name, text: comment, err });
+          close(); toast('✅ Повідомлення про помилку надіслано адміністратору'); }
+        catch (e) { ev.target.disabled = false; toast('Не надіслано: ' + e.message); }
+      };
+    };
+    modal('', (bx, close) => step1(bx, close), { lock: true });
+  }
+  let errTimer = null;
+  const errSched = () => { clearTimeout(errTimer); errTimer = setTimeout(errShowBtn, 180); };
+  document.addEventListener('mouseup', errSched);
+  document.addEventListener('keyup', e => { if (e.shiftKey || e.key.startsWith('Arrow')) errSched(); });
+  document.addEventListener('touchend', () => setTimeout(errSched, 300));
+  document.addEventListener('selectionchange', () => { const sl = window.getSelection(); if (!sl || sl.isCollapsed) errHideBtn(); else errSched(); });
+  window.addEventListener('scroll', errHideBtn, true);
+  window.addEventListener('hashchange', errHideBtn);
   const chatTime = ms => {
     if (!ms) return ''; const d = new Date(ms), now = new Date();
     const same = d.toDateString() === now.toDateString();
@@ -283,7 +365,7 @@
       ta.value = ta.value.slice(0, s0) + b.dataset.emo + ta.value.slice(s1); const p = s0 + b.dataset.emo.length;
       ta.focus(); ta.setSelectionRange(p, p); ta.dispatchEvent(new Event('input', { bubbles: true })); };
   }
-  const chatPrev = m => m ? ((m.text || '') || (m.img ? '🖼 Скріншот' : '')) : '';
+  const chatPrev = m => m ? (m.err ? '⚠️ Помилка: ' : '') + ((m.text || '') || (m.img ? '🖼 Скріншот' : '')) : '';
   const chatText = t => esc(t).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, '<br>');
   /* класи й предмети, доступні вчителю для чату */
   const chatClasses = () => myClasses().map(k => ({ cls: k.cls, subs: (isAdmin() ? k.subjects : visibleSubjects(k)).filter(s => canCourse(s.id)) })).filter(k => k.subs.length);
@@ -313,9 +395,20 @@
     let roster = null; /* для вчителя: учні (імена, кількість у класі) */
     let teachers = null; /* для адміністратора: вчителі */
     let pendImg = ''; /* скріншот, що чекає надсилання */
+    let replyTo = null; /* повідомлення, на яке відповідаємо */
     let filter = '';
     const grpRoute = a === 'grp';
     const nameOf = uid => { if (uid === user.uid) return 'ви'; const s = roster && roster.find(x => x.uid === uid); if (s) return s.name; const m = CHAT.list.find(x => x.from === uid && x.name); return m ? m.name : 'учасник'; };
+    /* повідомлення для розмови t (особиста, групова чи з адміністратором) */
+    const mkMsg = (t, text) => t.adm
+      ? { adm: true, tuid: t.tuid, tname: isAdmin() ? (t.tname || t.name || '') : user.name, course: '', role: isAdmin() ? 'a' : 't', name: user.name, text }
+      : t.grp
+      ? { grp: true, gcls: +t.cls, cls: +t.cls, course: t.course, role: student ? 's' : 't', name: user.name, text }
+      : { uid: t.uid, cls: +t.cls, course: t.course, studentName: student ? user.name : (t.name || ''), role: student ? 's' : 't', name: user.name, text };
+    const showReply = () => { const el = $app.querySelector('#chReply'); if (!el) return;
+      el.hidden = !replyTo;
+      el.innerHTML = replyTo ? `<span class="ch-rq"><b>↩ Відповідь для ${esc(replyTo.name || '')}</b>${esc(replyTo.text || '')}</span><button type="button" class="icon-btn" id="chReplyX" title="Скасувати відповідь">✕</button>` : '';
+      const x = el.querySelector('#chReplyX'); if (x) x.onclick = () => { replyTo = null; showReply(); }; };
     const draw = () => {
       const threads = chatThreads();
       let items;
@@ -373,11 +466,14 @@
         const names = !student && roster ? rb.map(nameOf).join(', ') : '';
         return rb.length ? ` <span class="ch-rd" title="${esc(names ? 'Прочитали: ' + names : 'Прочитали: ' + rb.length)}">👁 ${rb.length}</span>` : ' <span title="Ще ніхто не прочитав">✓</span>';
       };
+      const quote = m => m.reply ? `<a class="ch-quote" href="#" data-goto="${esc(m.reply.id || '')}"><b>↩ ${esc(m.reply.name || '')}</b>${esc((m.reply.text || '').slice(0, 140))}</a>` : '';
+      const fwdLbl = m => m.fwd ? `<span class="ch-fwd">↪ Переслано${m.fwd.name ? ' від ' + esc(m.fwd.name) : ''}</span>` : '';
+      const errCard = m => m.err ? `<div class="ch-err"><b>⚠️ Повідомлення про помилку</b>${m.err.sel ? `<q>${esc(m.err.sel)}</q>` : ''}<dl>${[['Від', m.name], ['Предмет', m.err.subject], ['Клас', m.err.cls], ['Розділ', m.err.section], ['Параграф', m.err.lesson], ['Сторінка', m.err.place], ['Підручник', m.err.book !== m.err.subject ? m.err.book : '']].filter(x => x[1]).map(x => `<dt>${x[0]}</dt><dd>${esc(String(x[1]))}</dd>`).join('')}</dl>${m.err.url ? `<a class="btn light sm" href="${esc(m.err.url)}">Відкрити місце помилки →</a>` : ''}</div>` : '';
       const bubbles = msgs.map(m => { const day = m.atMs ? new Date(m.atMs).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' }) : '';
         const sep = day !== lastDay ? `<div class="ch-day">${day}</div>` : ''; lastDay = day;
         const from = !chatMine(m) ? `<span class="ch-from">${m.role === 't' ? '🧑‍🏫 ' : m.role === 'a' ? '🛡 ' : ''}${esc(m.name || '')}</span>` : '';
-        const tools = (chatMine(m) ? `<button class="ch-act" data-edit="${m.id}" title="Редагувати">✏️</button>` : '') + (chatCanDelete(m) ? `<button class="ch-act" data-del="${m.id}" title="Видалити">🗑</button>` : '');
-        return `${sep}<div class="ch-msg ${chatMine(m) ? 'me' : ''} ${m.role === 't' && m.grp ? 'tch' : ''}"><div class="ch-bub">${from}${m.bc ? `<span class="ch-bc">📣 Повідомлення для всього класу</span>` : ''}${m.img ? `<img class="ch-img" src="${esc(m.img)}" alt="скріншот" data-zoom>` : ''}${chatText(m.text || '')}<span class="ch-t">${m.edited ? '<i>ред.</i> ' : ''}${chatTime(m.atMs)}${ticks(m)}</span></div>${tools ? `<span class="ch-tools-m">${tools}</span>` : ''}</div>`; }).join('');
+        const tools = `<button class="ch-act" data-reply="${m.id}" title="Відповісти">↩️</button><button class="ch-act" data-fwd="${m.id}" title="Переслати">↪️</button>` + (chatMine(m) ? `<button class="ch-act" data-edit="${m.id}" title="Редагувати">✏️</button>` : '') + (chatCanDelete(m) ? `<button class="ch-act" data-del="${m.id}" title="Видалити">🗑</button>` : '');
+        return `${sep}<div class="ch-msg ${chatMine(m) ? 'me' : ''} ${m.role === 't' && m.grp ? 'tch' : ''}" id="msg-${m.id}"><div class="ch-bub">${from}${fwdLbl(m)}${quote(m)}${errCard(m)}${m.bc ? `<span class="ch-bc">📣 Повідомлення для всього класу</span>` : ''}${m.img ? `<img class="ch-img" src="${esc(m.img)}" alt="скріншот" data-zoom>` : ''}${chatText(m.text || '')}<span class="ch-t">${m.edited ? '<i>ред.</i> ' : ''}${chatTime(m.atMs)}${ticks(m)}</span></div>${tools ? `<span class="ch-tools-m">${tools}</span>` : ''}</div>`; }).join('');
       $app.innerHTML = `
         <div class="page-head"><h1>💬 Чат</h1><p>${student ? 'Пиши вчителю особисто або спілкуйся в чаті класу. Повідомлення зберігаються місяць.' : (isAdmin() ? 'Розмови з учнями, групові чати класів і листування з вчителями.' : 'Особисті розмови з учнями, групові чати класів і зв’язок з адміністратором.') + ' Можна вставляти скріншоти (Ctrl+V або 📎). Повідомлення старші за місяць видаляються автоматично.'}</p></div>
         <div class="chat ${sel ? 'has-sel' : ''}">
@@ -392,7 +488,7 @@
           <section class="card ch-pane">
             ${sel ? `<div class="ch-head"><a class="ch-back" href="#/chat" title="До списку">←</a><div>${head}</div></div>
               <div class="ch-msgs" id="chMsgs">${bubbles || `<div class="ch-empty">${sel.adm ? (isAdmin() ? 'Повідомлень ще немає.' : '🛡 Напишіть адміністратору: питання про портал, доступ до предметів, помилки, пропозиції. Можна вставити скріншот (Ctrl+V).') : sel.grp ? (student ? '👥 Тут спілкується весь клас і вчитель.' : '👥 Напишіть перше повідомлення — його побачить увесь клас.') : (student ? '👋 Напиши перше повідомлення — наприклад, запитай про незрозуміле завдання.' : 'Повідомлень ще немає. Напишіть учню першим.')}</div>`}</div>
-              ${emojiBar('chEmo')}<div class="ch-pend" id="chPend" ${pendImg ? '' : 'hidden'}>${pendImg ? `<img src="${pendImg}" alt=""><span>Скріншот буде надіслано разом з повідомленням</span><button type="button" class="icon-btn" id="chPendX" title="Прибрати">✕</button>` : ''}</div><form class="ch-form" id="chForm"><button class="btn light ch-emo-btn" type="button" id="chEmoBtn" title="Смайлики">😊</button><label class="btn light ch-emo-btn" title="Додати скріншот або фото (можна також вставити Ctrl+V)">📎<input type="file" id="chFile" accept="image/*" hidden></label><textarea class="input" id="chText" rows="1" maxlength="2000" placeholder="${sel.grp ? 'Повідомлення для всього класу…' : 'Повідомлення… (Ctrl+V — вставити скріншот)'}"></textarea><button class="btn brand" type="submit" title="Надіслати">➤</button></form>`
+              ${emojiBar('chEmo')}<div class="ch-pend ch-reply" id="chReply" hidden></div><div class="ch-pend" id="chPend" ${pendImg ? '' : 'hidden'}>${pendImg ? `<img src="${pendImg}" alt=""><span>Скріншот буде надіслано разом з повідомленням</span><button type="button" class="icon-btn" id="chPendX" title="Прибрати">✕</button>` : ''}</div><form class="ch-form" id="chForm"><button class="btn light ch-emo-btn" type="button" id="chEmoBtn" title="Смайлики">😊</button><label class="btn light ch-emo-btn" title="Додати скріншот або фото (можна також вставити Ctrl+V)">📎<input type="file" id="chFile" accept="image/*" hidden></label><textarea class="input" id="chText" rows="1" maxlength="2000" placeholder="${sel.grp ? 'Повідомлення для всього класу…' : 'Повідомлення… (Ctrl+V — вставити скріншот)'}"></textarea><button class="btn brand" type="submit" title="Надіслати">➤</button></form>`
             : `<div class="ch-empty big"><span>💬</span>${student ? 'Обери розмову ліворуч' : 'Оберіть розмову ліворуч'}</div>`}
           </section>
         </div>`;
@@ -411,14 +507,11 @@
           e.preventDefault(); const text = ta.value.trim(), img = pendImg; if (!text && !img) return;
           const btn = f.querySelector('button[type=submit]'); btn.disabled = true; ta.value = ''; const eb = $app.querySelector('#chEmo'); if (eb) eb.hidden = true;
           pendImg = ''; const pe = $app.querySelector('#chPend'); if (pe) { pe.hidden = true; pe.innerHTML = ''; }
-          const msg = sel.adm
-            ? { adm: true, tuid: sel.tuid, tname: isAdmin() ? (sel.tname || '') : user.name, course: '', role: isAdmin() ? 'a' : 't', name: user.name, text }
-            : sel.grp
-            ? { grp: true, gcls: +sel.cls, cls: +sel.cls, course: sel.course, role: student ? 's' : 't', name: user.name, text }
-            : { uid: sel.uid, cls: +sel.cls, course: sel.course, studentName: student ? user.name : (sel.name || ''), role: student ? 's' : 't', name: user.name, text };
+          const msg = mkMsg(sel, text);
           if (img) msg.img = img;
+          const rp = replyTo; if (rp) { msg.reply = rp; replyTo = null; showReply(); }
           try { await Store.chatSend(msg); }
-          catch (ex) { toast('Не надіслано: ' + ex.message); const n = $app.querySelector('#chText'); if (n) n.value = text; if (img) { pendImg = img; showPend(); } }
+          catch (ex) { toast('Не надіслано: ' + ex.message); const n = $app.querySelector('#chText'); if (n) n.value = text; if (img) { pendImg = img; showPend(); } if (rp) { replyTo = rp; showReply(); } }
           const nb2 = $app.querySelector('#chForm button[type=submit]'); if (nb2) nb2.disabled = false;
         };
         const showPend = () => { const pe = $app.querySelector('#chPend'); if (!pe) return;
@@ -426,13 +519,46 @@
           const x = pe.querySelector('#chPendX'); if (x) x.onclick = () => { pendImg = ''; showPend(); }; };
         const takeImg = async file => { if (!file || !/^image\//.test(file.type)) return;
           try { pendImg = await shrinkImage(file); showPend(); ta.focus(); } catch (er) { toast(er.message); } };
-        showPend();
+        showPend(); showReply();
         ta.addEventListener('paste', e => { const it = [...((e.clipboardData && e.clipboardData.items) || [])].find(x => x.kind === 'file' && /^image\//.test(x.type));
           if (it) { e.preventDefault(); takeImg(it.getAsFile()); } });
         const fl = f.querySelector('#chFile'); if (fl) fl.onchange = () => { takeImg(fl.files[0]); fl.value = ''; };
         if (!('ontouchstart' in window)) ta.focus();
         bindEmoji($app, '#chEmoBtn', '#chEmo', '#chText');
       }
+      /* відповісти на повідомлення */
+      $app.querySelectorAll('[data-reply]').forEach(x => x.onclick = () => {
+        const m = CHAT.list.find(y => y.id === x.dataset.reply); if (!m) return;
+        replyTo = { id: m.id, name: chatMine(m) ? user.name : (m.name || ''), text: (chatPrev(m) || '').slice(0, 200) };
+        showReply(); const t = $app.querySelector('#chText'); if (t) t.focus();
+      });
+      /* перейти до процитованого повідомлення */
+      $app.querySelectorAll('[data-goto]').forEach(x => x.onclick = e => { e.preventDefault();
+        const el = document.getElementById('msg-' + x.dataset.goto);
+        if (!el) { toast('Початкове повідомлення вже видалене'); return; }
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('ch-flash'); setTimeout(() => el.classList.remove('ch-flash'), 1600); });
+      /* переслати повідомлення */
+      $app.querySelectorAll('[data-fwd]').forEach(x => x.onclick = () => {
+        const m = CHAT.list.find(y => y.id === x.dataset.fwd); if (!m) return;
+        const targets = items.filter(t => t.adm || t.grp || t.uid);
+        if (!targets.length) { toast('Немає розмов, куди можна переслати'); return; }
+        const plainT = h => String(h).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        modal(`<h2>↪️ Переслати повідомлення</h2>
+          <div class="ch-fwd-prev">${m.img ? '🖼 ' : ''}${esc((m.text || (m.img ? 'Скріншот' : '')).slice(0, 300))}</div>
+          <div class="field"><label>Кому</label><select class="input" id="fTo">${targets.map((t, i) => `<option value="${i}">${esc(plainT(t.title))}${t.sub && !t.grp && !t.adm && !student ? '' : ''}</option>`).join('')}</select></div>
+          <div class="field"><label>Коментар (необов’язково)</label><textarea class="input" id="fCm" rows="2" maxlength="500" placeholder="Додати свій коментар…"></textarea></div>
+          <div class="m-actions"><button class="btn light" data-close>Скасувати</button><button class="btn brand" id="fGo">Переслати</button></div>`, (bx, close) => {
+          bx.querySelector('#fGo').onclick = async () => {
+            const t = targets[+bx.querySelector('#fTo').value]; if (!t) return;
+            const cm = bx.querySelector('#fCm').value.trim();
+            const msg = mkMsg(t, (cm ? cm + '\n\n' : '') + (m.text || ''));
+            msg.fwd = { name: chatMine(m) ? user.name : (m.name || ''), id: m.id };
+            if (m.img) msg.img = m.img;
+            if (m.err) msg.err = m.err;
+            try { await Store.chatSend(msg); close(); toast('✅ Переслано'); location.hash = t.href; } catch (e) { toast('Не переслано: ' + e.message); }
+          };
+        });
+      });
       /* редагування власного повідомлення */
       $app.querySelectorAll('[data-edit]').forEach(x => x.onclick = () => {
         const m = CHAT.list.find(y => y.id === x.dataset.edit); if (!m) return;
@@ -552,7 +678,8 @@
       sec('chat', '💬', 'Чат з учителем', 'Запитай учителя, якщо щось незрозуміло.', [
         'Відкрий <b>💬 Чат</b> і обери предмет — це особиста розмова з учителем.',
         'Або обери <b>чат класу</b>, щоб спілкуватися з учителем і однокласниками.',
-        'Напиши повідомлення й натисни «Надіслати». Скріншот додай кнопкою 📎 або <b>Ctrl+V</b>.'],
+        'Напиши повідомлення й натисни «Надіслати». Скріншот додай кнопкою 📎 або <b>Ctrl+V</b>.',
+        'Щоб відповісти на конкретне повідомлення, наведи на нього й натисни <b>↩️</b>; <b>↪️</b> — переслати.'],
         ['Будь ввічливим: чат бачить учитель.', 'Повідомлення зберігаються місяць.'])
     ];
     const teacher = [
@@ -595,8 +722,15 @@
         'Відкрийте <b>💬 Чат</b>: особисті розмови з учнями згруповано за предметами.',
         '<b>Чат класу</b> — повідомлення для всього класу (оголошення, домашнє завдання).',
         '<b>🛡 Адміністратор</b> — окрема розмова з адміністратором порталу.',
-        'Скріншот додайте кнопкою 📎 або <b>Ctrl+V</b>; своє повідомлення можна редагувати чи видалити.'],
-        ['Повідомлення зберігаються місяць.'])
+        'Скріншот додайте кнопкою 📎 або <b>Ctrl+V</b>; своє повідомлення можна редагувати чи видалити.',
+        'Наведіть на повідомлення: <b>↩️</b> — відповісти (з цитатою), <b>↪️</b> — переслати в іншу розмову.'],
+        ['Повідомлення зберігаються місяць.']),
+      sec('t-err', '⚠️', 'Повідомити про помилку', 'Знайшли помилку в презентації, конспекті чи тесті?', [
+        'Виділіть мишкою текст із помилкою — з’явиться червона кнопка <b>⚠️ Повідомити про помилку</b>.',
+        'Натисніть її та напишіть коментар: що не так і як має бути.',
+        'Перевірте дані у вікні підтвердження й натисніть <b>✅ Так, надіслати</b>.',
+        'Адміністратор отримає повідомлення в чаті з фрагментом, предметом, класом, параграфом і посиланням на місце помилки.'],
+        ['Предмет, клас і параграф визначаються автоматично.'])
     ].concat(isAdmin() ? [sec('t-admin', '⚙️', 'Лише для адміністратора', 'Налаштування порталу.', [
       '<b>Вчителі</b> — підтвердження заявок, призначення предметів і класів, вимкнення доступу. Під час відкриття сторінки вчителям автоматично додається доступ до нових курсів їхніх предметів.',
       '<b>Предмети за класами</b> — назви, значки, порядок, прив’язка матеріалів (у списку — лише підручники цього класу й предмета). Можна приховати предмет від учнів або <b>весь клас від учнів і вчителів</b>.',
