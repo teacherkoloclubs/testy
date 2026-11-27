@@ -676,3 +676,52 @@ body { background-color: #F7F9FD; }
   .nt-head { padding: 16px; } .nt-head h1 { font-size: 20px; } .nt-badge { min-width: 56px; height: 56px; font-size: 17px; }
   .nt-terms dl, .nt-given { grid-template-columns: 1fr; } .nt-given > div:first-child { border-right: 0; padding: 0; }
 }
+
+/* ---- розгортний список непройдених тестів ---- */
+.ov-det { display: inline; }
+.ov-det > summary { display: inline; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; list-style: none; }
+.ov-det > summary::-webkit-details-marker { display: none; }
+.ov-det[open] .ov-caret { display: inline-block; transform: rotate(180deg); }
+.ov-list { display: block; margin: 8px 0 4px; padding: 10px 12px; background: #fff; border: 1px solid #FDE68A; border-radius: 12px; color: var(--ink); font-weight: 600; white-space: normal; }
+.ov-sub + .ov-sub { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #E5E7EB; }
+.ov-sub ul { margin: 4px 0 4px 18px; padding: 0; }
+.ov-sub li { margin: 3px 0; font-size: 13px; }
+.ov-sub a { color: var(--brand); text-decoration: none; font-weight: 700; }
+.ov-sub a:hover { text-decoration: underline; }
+.ov-sub small { color: var(--ink-2); font-weight: 600; }
+.ov-j { display: inline-block; margin-top: 2px; font-size: 12.5px; }
+.flag-box .ov-list { margin-top: 10px; }
+
+/* ---- конспект: схеми, побудовані з теорії ---- */
+.nt-ico { margin-right: 8px; }
+.nt-block.wide-fig { grid-template-columns: 1fr; }
+.nt-block.wide-fig .nt-fig { padding: 14px; background: #FBFCFF; }
+.ntf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; text-align: left; }
+.ntf-card { position: relative; background: #fff; border: 2px solid color-mix(in srgb, var(--k) 35%, #fff); border-top: 5px solid var(--k); border-radius: 14px; padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 4px; }
+.ntf-card .ntf-i { font-size: 26px; line-height: 1; }
+.ntf-card b { font-size: 15px; color: #111827; }
+.ntf-card small { font-size: 13px; color: var(--ink-2); font-weight: 600; line-height: 1.4; }
+.ntf-cmp { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: stretch; text-align: left; }
+.ntf-col { border-radius: 14px; border: 2px solid color-mix(in srgb, var(--k) 40%, #fff); background: color-mix(in srgb, var(--k) 7%, #fff); padding: 10px 14px; }
+.ntf-ch { font-weight: 900; font-size: 16px; color: var(--k); margin-bottom: 6px; }
+.ntf-col ul { margin: 0 0 0 18px; padding: 0; } .ntf-col li { font-size: 14px; margin: 3px 0; line-height: 1.45; }
+.ntf-vs { align-self: center; font-weight: 900; color: #94A3B8; font-size: 14px; }
+.ntf-flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; justify-content: center; }
+.ntf-step { flex: 1 1 120px; max-width: 190px; background: #fff; border: 2px solid var(--k); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.ntf-step .ntf-i { font-size: 24px; } .ntf-step b { font-size: 14px; } .ntf-step small { font-size: 12.5px; color: var(--ink-2); font-weight: 600; }
+.ntf-arr { align-self: center; color: #94A3B8; font-size: 20px; font-weight: 900; }
+.ntf-time { position: relative; display: grid; gap: 8px; padding-left: 22px; text-align: left; }
+.ntf-time::before { content: ''; position: absolute; left: 8px; top: 6px; bottom: 6px; width: 3px; border-radius: 3px; background: linear-gradient(#4F46E5, #0EA5E9); }
+.ntf-ev { position: relative; display: grid; grid-template-columns: minmax(90px, max-content) 1fr; gap: 12px; align-items: baseline; }
+.ntf-ev::before { content: ''; position: absolute; left: -19px; top: 5px; width: 11px; height: 11px; border-radius: 50%; background: #fff; border: 3px solid var(--k); }
+.ntf-d { font-weight: 900; color: var(--k); font-size: 14px; } .ntf-t { font-size: 14.5px; line-height: 1.45; }
+.nt-mind { background: #F8FAFF; border: 1px solid #E0E7FF; }
+.nt-mind-fig svg { width: 100%; height: auto; max-height: 380px; display: block; }
+.nt-check { background: #F0F9FF; border: 1px solid #BAE6FD; } .nt-check ol { margin: 0 0 0 20px; padding: 0; line-height: 1.6; }
+.nt-words { display: flex; flex-wrap: wrap; gap: 6px; } .nt-words span { background: #EEF2FF; color: #3730A3; border-radius: 999px; padding: 4px 12px; font-weight: 700; font-size: 13.5px; }
+@media (max-width: 760px) { .ntf-cmp { grid-template-columns: 1fr; } .ntf-vs { justify-self: center; } .ntf-ev { grid-template-columns: 1fr; gap: 2px; } .ntf-step { max-width: none; } .ntf-arr { transform: rotate(90deg); width: 100%; text-align: center; } }
+.nt-ex { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+.nt-ex-l { font-weight: 800; color: var(--ink-2); font-size: 13.5px; }
+.nt-ex-i { background: #FFF7ED; border: 1px solid #FED7AA; color: #7C2D12; border-radius: 10px; padding: 3px 10px; font-weight: 700; font-size: 14.5px; font-family: 'Cambria Math', Georgia, serif; }
+.nt-inline-fig .ntf-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.nt-inline-fig { margin-top: 8px; }

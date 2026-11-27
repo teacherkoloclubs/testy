@@ -524,7 +524,7 @@
         'Гортай слайди стрілками ← → на екрані, клавіатурою або свайпом на телефоні.',
         'Виконуй вправи на слайдах (правда/міф, відповідності, порядок) — вони допомагають підготуватися до тесту.',
         'Наприкінці — запитання для самоперевірки й посилання на тест.',
-        'Де є кнопка <b>📒 Конспект уроку</b> — це стислий виклад параграфа зі схемами, формулами й прикладами. Його зручно повторювати перед тестом і можна надрукувати.'],
+        'Кнопка <b>📒 Конспект уроку</b> — стислий виклад параграфа: головна думка, схеми, опорна схема, формули, приклади, «Запам’ятай» і «Перевір себе». Його зручно повторювати перед тестом і можна надрукувати.'],
         ['Вправи в презентації не впливають на оцінку — сміливо пробуй.']),
       sec('test', '📝', 'Тести', 'Тест за параграф — 12 питань, за розділ — 24, річний — 36.', [
         'Натисни <b>📝 Тест</b> біля параграфа (або <b>«Почати»</b> біля підсумкового тесту).',
@@ -572,7 +572,7 @@
         'Відкрийте клас → предмет. Біля кожного уроку — номер параграфа <b>§</b> за підручником.',
         '<b>📋 План</b> — мета уроку, етапи з хронометражем, посилання на презентацію, симуляцію й тест, творче домашнє завдання.',
         '<b>🎞 Презентація</b> — показуйте на уроці з проєктора; анімовані слайди з теорією та вправами.',
-        '<b>📒 Конспект уроку</b> (там, де є) — стислий зміст параграфа зі схемами й формулами; можна роздрукувати для учнів.',
+        '<b>📒 Конспект уроку</b> — стислий зміст параграфа зі схемами, опорною схемою й формулами; можна роздрукувати для учнів.',
         '<b>🧪 Симуляції</b> й <b>🔬 лабораторні роботи</b> — демонструйте на уроці або давайте учням для самостійної роботи.',
         '<b>📝 Тест</b> — учні проходять його на уроці чи вдома; ви можете переглянути тест заздалегідь.'],
         ['Дати уроків з’являються автоматично, якщо адміністратор завантажив розклад.']),
@@ -784,7 +784,6 @@
     const sims = await loadSims(id);
     const labs = await loadLabs(id);
     const plans = await loadPlans(id, course);
-    const notes = hasNotes(id) ? await loadNotes(id) : {};
     const results = user.role === 'student' ? (await Store.myResults()).filter(r => r.course === id) : [];
     const bm = bestMap(results);
     const lessons = course.sections.flatMap(s => s.lessons);
@@ -831,7 +830,7 @@
                 <div><h3>${esc(l.title)}</h3><div class="meta">Урок ${l.n}${l.pages ? ' · ' + esc(pg(l.pages)) : ''} ${dateBadge(l)} ${status(l.id)}</div></div>
                 <div class="lesson-actions">
                   <a class="btn light sm" href="#/slides/${id}/${l.id}">🎞 Презентація</a>
-                  ${notes[l.id] ? `<a class="btn light sm nt-btn" href="#/notes/${id}/${l.id}">📒 Конспект уроку</a>` : ''}
+                  ${hasNotes(id) ? `<a class="btn light sm nt-btn" href="#/notes/${id}/${l.id}">📒 Конспект уроку</a>` : ''}
                   ${window.Games && Games.has(id, l.id) ? `<a class="btn light sm game-btn" href="#/games/${id}/${l.id}">🎮 Ігри</a>` : ''}
                   ${plans[l.id] ? (isStaff() ? `<a class="btn light sm" href="#/plan/${id}/${l.id}" title="План уроку й домашнє завдання">📋 План</a>` : (plans[l.id].hw ? `<a class="btn light sm" href="#/plan/${id}/${l.id}" title="Творче домашнє завдання">🏠 Д/з</a>` : '')) : ''}
                   ${testBtn(l.id, `#/test/${id}/lesson/${l.id}`, '📝 Тест')}
@@ -891,36 +890,128 @@
     await Promise.all(course.sections.map(s => loadScript(`data/courses/${id}/p${s.n}.js`).catch(() => null)));
     return (window.PLANS || {})[id] || {};
   }
-  /* ---------------- конспект уроку ---------------- */
-  const hasNotes = id => !!(AVAILABLE.find(c => c.id === id) || {}).notes;
+  /* ---------------- конспект уроку ----------------
+     Власні (намальовані) конспекти лежать у data/notes/<курс>.js. Для решти уроків конспект
+     складається автоматично з теорії параграфа (THEORY) — зі схемами, побудованими за її структурою. */
+  const hasNotes = id => courseExists(id);
+  const hasDrawnNotes = id => !!(AVAILABLE.find(c => c.id === id) || {}).notes;
   async function loadNotes(id) {
     window.NOTES = window.NOTES || {};
-    if (!window.NOTES[id]) { try { await loadScript(`data/notes/${id}.js`); } catch (e) { window.NOTES[id] = {}; } }
-    return window.NOTES[id] || {};
+    if (!window.NOTES[id]) { if (hasDrawnNotes(id)) { try { await loadScript(`data/notes/${id}.js`); } catch (e) { /* немає */ } } window.NOTES[id] = window.NOTES[id] || {}; }
+    return window.NOTES[id];
+  }
+  async function loadTheory(id, course, secs) {
+    await Promise.all((secs || course.sections.map(s => s.n)).map(n => loadScript(`data/courses/${id}/t${n}.js`).catch(() => null)));
+    return (window.THEORY || {})[id] || {};
+  }
+  const NT_COLORS = ['#4F46E5', '#0EA5E9', '#16A34A', '#F59E0B', '#EC4899', '#8B5CF6', '#14B8A6', '#EF4444'];
+  /* опорна схема (mind map) у SVG: центр і до 8 гілок */
+  function ntMindMap(center, items, title) {
+    const W = 620, H = 360, cx = W / 2, cy = H / 2, n = items.length, rx = 225, ry = 125;
+    const wrap = (t, max) => { const w = String(t || '').split(/\s+/), out = []; let cur = ''; w.forEach(x => { if ((cur + ' ' + x).trim().length > max && cur) { out.push(cur); cur = x; } else cur = (cur + ' ' + x).trim(); }); if (cur) out.push(cur); return out.slice(0, 2); };
+    let g = '';
+    items.forEach((it, i) => {
+      const a = -Math.PI / 2 + i * 2 * Math.PI / n, x = cx + rx * Math.cos(a), y = cy + ry * Math.sin(a), c = NT_COLORS[i % NT_COLORS.length];
+      g += `<path d="M${cx},${cy} Q${(cx + x) / 2 + 20 * Math.sin(a)},${(cy + y) / 2 - 20 * Math.cos(a)} ${x},${y}" stroke="${c}" stroke-width="3" fill="none" opacity=".55"/>`;
+      const l1 = wrap(it[1], 16), l2 = wrap(it[2], 22);
+      g += `<rect x="${x - 82}" y="${y - 34}" width="164" height="68" rx="16" fill="#fff" stroke="${c}" stroke-width="2.5"/>`
+        + `<text x="${x - 70}" y="${y + 9}" font-size="22">${esc(it[0] || '')}</text>`
+        + l1.map((t, k) => `<text x="${x - 40}" y="${y - 12 + k * 15}" font-size="13" font-weight="800" fill="#1F2340">${esc(t)}</text>`).join('')
+        + l2.map((t, k) => `<text x="${x - 40}" y="${y + 8 + (l1.length - 1) * 15 + k * 13}" font-size="11" fill="#64748B">${esc(t)}</text>`).join('');
+    });
+    /* центр — емодзі або коротка назва теми */
+    const isIco = [...String(center || '')].length <= 3;
+    const ct = wrap(isIco ? (title || '') : center, 13).slice(0, 3);
+    g += `<circle cx="${cx}" cy="${cy}" r="58" fill="#EEF2FF" stroke="#4F46E5" stroke-width="3"/>`
+      + (isIco ? `<text x="${cx}" y="${cy - (ct.length ? 4 : -10)}" font-size="30" text-anchor="middle">${esc(center || '💡')}</text>` : '')
+      + ct.map((t, k) => `<text x="${cx}" y="${isIco ? cy + 20 + k * 13 : cy + 5 - (ct.length - 1) * 8 + k * 16}" font-size="${isIco ? 11.5 : 14}" font-weight="800" text-anchor="middle" fill="#312E81">${esc(t)}</text>`).join('');
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="Inter,Arial,sans-serif" role="img">${g}</svg>`;
+  }
+  function autoNotes(lesson, th) {
+    const rt = richText, list = th || [];
+    if (!list.length) return null;
+    const defs = list.filter(x => x.type === 'tdef');
+    const tf = (lesson.slides || []).filter(x => x.type === 'tf').flatMap(x => (x.items || []).filter(i => i[1] === true).map(i => i[0]));
+    const words = ((lesson.slides || []).find(x => x.type === 'words') || {}).words || [];
+    const blocks = [], formulas = [], ex = [];
+    let mind = null, check = null;
+    list.forEach((t, i) => {
+      if (t.type === 'tdef') blocks.push({ h: t.term, p: [t.def || '', t.note || ''].filter(Boolean), icon: t.e, ex: t.ex || [] });
+      else if (t.type === 'tgrid') blocks.push({ h: t.h, icon: t.e, p: t.lead ? [t.lead] : [], fig: `<div class="ntf-grid">${(t.items || []).map((it, k) => `<div class="ntf-card" style="--k:${NT_COLORS[k % NT_COLORS.length]}"><span class="ntf-i">${esc(it[0] || '')}</span><b>${rt(it[1] || '')}</b>${it[2] ? `<small>${rt(it[2])}</small>` : ''}</div>`).join('')}</div>` });
+      else if (t.type === 'tcmp') blocks.push({ h: t.h, icon: t.e, fig: `<div class="ntf-cmp">${(t.cols || []).map((c, k) => `<div class="ntf-col" style="--k:${NT_COLORS[(k * 3) % NT_COLORS.length]}"><div class="ntf-ch">${esc(c[1] || '')} ${rt(c[0] || '')}</div><ul>${(c[2] || []).map(x => `<li>${rt(x)}</li>`).join('')}</ul></div>`).join('<div class="ntf-vs">vs</div>')}</div>` });
+      else if (t.type === 'tflow') blocks.push({ h: t.h, icon: t.e, fig: `<div class="ntf-flow">${(t.items || []).map((it, k) => `<div class="ntf-step" style="--k:${NT_COLORS[k % NT_COLORS.length]}"><span class="ntf-i">${esc(it[0] || '')}</span><b>${rt(it[1] || '')}</b>${it[2] ? `<small>${rt(it[2])}</small>` : ''}</div>`).join('<span class="ntf-arr">➜</span>')}</div>` });
+      else if (t.type === 'ttime') blocks.push({ h: t.h, icon: t.e, fig: `<div class="ntf-time">${(t.items || []).map((it, k) => `<div class="ntf-ev" style="--k:${NT_COLORS[k % NT_COLORS.length]}"><span class="ntf-d">${rt(it[0] || '')}</span><span class="ntf-t">${rt(it[1] || '')}</span></div>`).join('')}</div>` });
+      else if (t.type === 'tsteps') ex.push(t);
+      else if (t.type === 'tformula') (t.parts || []).forEach(pt => formulas.push([pt[0], [pt[1], pt[2]].filter(Boolean).join(' · ')]));
+      else if (t.type === 'tmap') mind = t;
+      else if (t.type === 'tx') check = t;
+    });
+    /* означення об’єднуємо з наступною схемою, щоб конспект був щільнішим */
+    const merged = [];
+    blocks.forEach(b => { const last = merged[merged.length - 1]; if (last && !last.fig && !b.fig && !(last.ex || []).length && !(b.ex || []).length && (last.p || []).length < 3 && (b.p || []).length === 1) { last.p.push(`**${b.h}** — ${b.p[0]}`); last.multi = true; } else merged.push(Object.assign({}, b, { p: (b.p || []).slice() })); });
+    merged.forEach(b => { if (b.multi) { b.p[0] = `**${b.h}** — ${b.p[0]}`; b.h = 'Основні поняття'; } });
+    const d0 = defs.find(d => d.def), idea = d0 ? (d0.def.length < 260 ? `**${d0.term}** — ${d0.def}` : d0.def) : (tf[0] || lesson.title);
+    /* перше означення вже стоїть у «Головному» — не дублюємо його окремим блоком і в поняттях */
+    if (d0 && merged.length > 1) { const k = merged.findIndex(b => !b.fig && !b.multi && b.h === d0.term && (b.p || []).length <= 2); if (k >= 0) { if ((merged[k].ex || []).length) merged[k].p = merged[k].p.slice(1); else merged.splice(k, 1); } }
+    const plain = t => String(t || '').replace(/\*\*/g, '');
+    const termList = defs.filter(d => d.def).slice(0, 8);
+    return {
+      idea, auto: true,
+      blocks: merged.map(b => ({ h: b.h, p: b.p, fig: b.fig, icon: b.icon, ex: b.ex })),
+      mind: mind ? ntMindMap(mind.center, (mind.items || []).slice(0, 8), mind.h) : null, mindTitle: mind ? mind.h : '',
+      formulas, examples: ex,
+      terms: termList.length > 1 ? termList.map(d => [d.term, plain(d.def).length > 160 ? plain(d.def).slice(0, 157).replace(/\s+\S*$/, '') + '…' : d.def]) : [],
+      words,
+      remember: tf.slice(0, 5),
+      check: check ? check.pts || [] : []
+    };
   }
   async function renderNotes(id, lid) {
     const meta = catalogSubject(id);
     if (!meta || (user.role === 'student' && (meta.cls !== user.cls || meta.archived)) || !canCourse(meta.id)) { location.hash = '#/'; return; }
     $app.innerHTML = '<div class="loader"><span></span></div>';
-    const [course, notes] = await Promise.all([loadCourse(id), loadNotes(id)]);
-    const lessons = course.sections.flatMap(s => s.lessons.map(l => Object.assign(l, { section: l.section || s })));
-    const idx = lessons.findIndex(l => l.id === lid), lesson = lessons[idx], x = notes[lid];
-    if (!lesson || !x) { $app.innerHTML = `<div class="card empty"><span class="e">📒</span>Конспект до цього уроку ще готується</div>`; return; }
+    const course = await loadCourse(id);
+    if (course.primary) document.body.classList.add('theme-primary');
+    const lessons = course.sections.flatMap(s => s.lessons);
+    const idx = lessons.findIndex(l => l.id === lid), lesson = lessons[idx];
+    if (!lesson) { $app.innerHTML = `<div class="card empty"><span class="e">📒</span>Урок не знайдено</div>`; return; }
+    const [notes, theory] = await Promise.all([loadNotes(id), loadTheory(id, course, [lesson.section.n])]);
+    const hand = notes[lid];
+    let x = hand && !hand.figs ? hand : autoNotes(lesson, theory[lid]);
+    /* намальовані рисунки до автоматичного конспекту: figs = [{ h, svg, cap, p? }] — до блоку з такою назвою або окремим блоком */
+    if (x && hand && hand.figs) {
+      x = Object.assign({}, x, { blocks: x.blocks.slice() });
+      if (hand.idea) x.idea = hand.idea;
+      hand.figs.forEach(f => {
+        const k = f.h ? x.blocks.findIndex(b => b.h === f.h && !b.svg) : -1;
+        if (k >= 0) x.blocks[k] = Object.assign({}, x.blocks[k], { svg: f.svg, cap: f.cap, fig: null, figHtml: x.blocks[k].fig || null });
+        else x.blocks.splice(f.at != null ? Math.min(f.at, x.blocks.length) : x.blocks.length, 0, { h: f.title || f.h || 'Схема', p: f.p || [], svg: f.svg, cap: f.cap, icon: f.icon || '🖼' });
+      });
+      ['formulas', 'remember'].forEach(k => { if (hand[k]) x[k] = (x[k] || []).concat(hand[k]); });
+      if (hand.example) x.example = hand.example;
+    }
+    if (!x) { $app.innerHTML = `<div class="card empty"><span class="e">📒</span>Конспект до цього уроку ще готується</div>`; return; }
     const no = lessonNo(id, lid), pn = no != null ? '§ ' + no : 'Урок ' + lesson.n;
-    const prev = lessons.slice(0, idx).reverse().find(l => notes[l.id]), next = lessons.slice(idx + 1).find(l => notes[l.id]);
+    const prev = lessons[idx - 1], next = lessons[idx + 1];
+    const navLbl = l => { const n = lessonNo(id, l.id); return n != null ? '§ ' + n : 'Урок ' + l.n; };
     const rt = richText;
-    const block = (b, i) => `<section class="nt-block ${b.svg ? 'has-fig' : ''} ${i % 2 ? 'alt' : ''}">
-        <div class="nt-txt"><h2>${esc(b.h)}</h2>${(b.p || []).map(t => `<p>${rt(t)}</p>`).join('')}${(b.list || []).length ? `<ul>${b.list.map(t => `<li>${rt(t)}</li>`).join('')}</ul>` : ''}</div>
-        ${b.svg ? `<figure class="nt-fig">${b.svg}${b.cap ? `<figcaption>${rt(b.cap)}</figcaption>` : ''}</figure>` : ''}</section>`;
+    const block = (b, i) => { const fig = b.svg || b.fig; const wide = b.fig && !b.svg;
+      return `<section class="nt-block ${fig && !wide ? 'has-fig' : ''} ${wide ? 'wide-fig' : ''} ${i % 2 ? 'alt' : ''}">
+        <div class="nt-txt"><h2>${b.icon ? `<span class="nt-ico">${esc(b.icon)}</span>` : ''}${rt(b.h || '')}</h2>${(b.p || []).map(t => `<p>${rt(t)}</p>`).join('')}${b.figHtml ? `<div class="nt-inline-fig">${b.figHtml}</div>` : ''}${(b.list || []).length ? `<ul>${b.list.map(t => `<li>${rt(t)}</li>`).join('')}</ul>` : ''}${(b.ex || []).length ? `<div class="nt-ex"><span class="nt-ex-l">Приклади:</span>${b.ex.map(t => `<span class="nt-ex-i">${rt(t)}</span>`).join('')}</div>` : ''}</div>
+        ${fig ? `<figure class="nt-fig">${fig}${b.cap ? `<figcaption>${rt(b.cap)}</figcaption>` : ''}</figure>` : ''}</section>`; };
+    const exHtml = e => `<section class="nt-box nt-example"><h2>✍️ ${e.h ? rt(e.h) : 'Приклад розв’язування'}</h2>${e.task || e.q ? `<p class="nt-q">${rt(e.task || e.q)}</p>` : ''}
+        ${e.given ? `<div class="nt-given"><div><b>Дано:</b>${e.given.map(g => `<div>${rt(g)}</div>`).join('')}</div><div><b>Розв’язання:</b>${e.steps.map(g => `<div>${rt(g)}</div>`).join('')}</div></div>` : `<ol>${(e.steps || []).map(g => `<li>${rt(g)}</li>`).join('')}</ol>`}
+        ${e.ans ? `<p class="nt-ans"><b>Відповідь:</b> ${rt(e.ans)}</p>` : ''}</section>`;
     const body = `
       <div class="nt-idea"><span>💡</span><div><b>Головне:</b> ${rt(x.idea || '')}</div></div>
       ${(x.blocks || []).map(block).join('')}
-      ${(x.formulas || []).length ? `<section class="nt-box nt-formulas"><h2>🧮 Формули</h2><div class="nt-fgrid">${x.formulas.map(f => `<div class="nt-f"><div class="nt-fx">${rt(f[0])}</div><div class="nt-fd">${rt(f[1])}</div></div>`).join('')}</div></section>` : ''}
-      ${x.example ? `<section class="nt-box nt-example"><h2>✍️ Приклад розв’язування</h2><p class="nt-q">${rt(x.example.q)}</p>
-        ${x.example.given ? `<div class="nt-given"><div><b>Дано:</b>${x.example.given.map(g => `<div>${rt(g)}</div>`).join('')}</div><div><b>Розв’язання:</b>${x.example.steps.map(g => `<div>${rt(g)}</div>`).join('')}</div></div>` : `<ol>${x.example.steps.map(g => `<li>${rt(g)}</li>`).join('')}</ol>`}
-        <p class="nt-ans"><b>Відповідь:</b> ${rt(x.example.ans)}</p></section>` : ''}
+      ${x.mind ? `<section class="nt-box nt-mind"><h2>🧠 Опорна схема${x.mindTitle ? ': ' + rt(x.mindTitle) : ''}</h2><div class="nt-mind-fig">${x.mind}</div></section>` : ''}
+      ${(x.formulas || []).length ? `<section class="nt-box nt-formulas"><h2>🧮 Формули й правила</h2><div class="nt-fgrid">${x.formulas.map(f => `<div class="nt-f"><div class="nt-fx">${rt(f[0])}</div>${f[1] ? `<div class="nt-fd">${rt(f[1])}</div>` : ''}</div>`).join('')}</div></section>` : ''}
+      ${x.example ? exHtml(x.example) : ''}${(x.examples || []).map(exHtml).join('')}
       ${(x.terms || []).length ? `<section class="nt-box nt-terms"><h2>📖 Ключові поняття</h2><dl>${x.terms.map(t => `<dt>${rt(t[0])}</dt><dd>${rt(t[1])}</dd>`).join('')}</dl></section>` : ''}
-      ${(x.remember || []).length ? `<section class="nt-box nt-rem"><h2>📌 Запам’ятай</h2><ul>${x.remember.map(t => `<li>${rt(t)}</li>`).join('')}</ul></section>` : ''}`;
+      ${(x.words || []).length && !(x.terms || []).length ? `<section class="nt-box nt-terms"><h2>📖 Ключові слова</h2><div class="nt-words">${x.words.map(w => `<span>${esc(w)}</span>`).join('')}</div></section>` : ''}
+      ${(x.remember || []).length ? `<section class="nt-box nt-rem"><h2>📌 Запам’ятай</h2><ul>${x.remember.map(t => `<li>${rt(t)}</li>`).join('')}</ul></section>` : ''}
+      ${(x.check || []).length ? `<section class="nt-box nt-check"><h2>❓ Перевір себе</h2><ol>${x.check.map(t => `<li>${rt(t)}</li>`).join('')}</ol></section>` : ''}`;
     $app.innerHTML = `<div class="crumbs">${isStaff() ? `<a href="#/">Класи</a><span>›</span>` : ''}<a href="#/class/${meta.cls}">${meta.cls} клас</a><span>›</span><a href="#/course/${id}">${esc(meta.name)}</a><span>›</span><span>Конспект</span></div>
       <div class="nt-head" style="--c:${lesson.section.color || meta.color}">
         <div class="nt-badge">${esc(pn)}</div>
@@ -928,11 +1019,11 @@
       </div>
       <div class="nt-tools"><a class="btn light sm" href="#/slides/${id}/${lid}">🎞 Презентація</a><a class="btn light sm" href="#/test/${id}/lesson/${lid}">📝 Тест</a><button class="btn light sm" id="ntPrint">🖨 Друк конспекту</button></div>
       <article class="nt-page" id="ntPage">${body}</article>
-      <div class="nt-nav">${prev ? `<a class="btn light" href="#/notes/${id}/${prev.id}">← ${esc(lessonNo(id, prev.id) != null ? '§ ' + lessonNo(id, prev.id) : prev.title)}</a>` : '<span></span>'}<a class="btn light" href="#/course/${id}">До змісту</a>${next ? `<a class="btn brand" href="#/notes/${id}/${next.id}">${esc(lessonNo(id, next.id) != null ? '§ ' + lessonNo(id, next.id) : next.title)} →</a>` : '<span></span>'}</div>`;
+      <div class="nt-nav">${prev ? `<a class="btn light" href="#/notes/${id}/${prev.id}">← ${esc(navLbl(prev))}</a>` : '<span></span>'}<a class="btn light" href="#/course/${id}">До змісту</a>${next ? `<a class="btn brand" href="#/notes/${id}/${next.id}">${esc(navLbl(next))} →</a>` : '<span></span>'}</div>`;
     $app.querySelector('#ntPrint').onclick = () => {
       const links = [...document.querySelectorAll('link[rel="stylesheet"]')].map(l => `<link rel="stylesheet" href="${l.href}">`).join('');
       printHtml(`<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8"><title>Конспект · ${esc(lesson.title)}</title>${links}<style>
-        @page{size:A4 portrait;margin:12mm}body{background:#fff!important;padding:0!important}.nt-page{box-shadow:none!important;border:0!important;padding:0!important}.nt-block{break-inside:avoid}.nt-box{break-inside:avoid}</style></head>
+        @page{size:A4 portrait;margin:12mm}body{background:#fff!important;padding:0!important}.nt-page{box-shadow:none!important;border:0!important;padding:0!important;background-image:none!important}.nt-block,.nt-box{break-inside:avoid}</style></head>
         <body><h1 style="font-size:20px;margin:0 0 4px">📒 ${esc(pn)}. ${esc(lesson.title)}</h1><p style="margin:0 0 12px;color:#64748B;font-size:12px">${esc(meta.name)} · ${meta.cls} клас · конспект уроку</p>${$app.querySelector('#ntPage').outerHTML}</body></html>`, 1200);
     };
   }
@@ -1710,6 +1801,18 @@
     if (overdue >= 3) flags.push(`не пройдено ${overdue} тестів за минулі уроки`);
     return { s, subs, ms, avg: a, passed: scores.length, lessonPassed: lp, total: tot, done: tot ? lp / tot : null, attempts, last, leaves, flags };
   }
+  /* сигнали учня; «не пройдено N тестів» — розгортається в список тестів за предметами з посиланнями */
+  function flagsHtml(D, r, modalMode) {
+    if (!r.flags.length) return '';
+    const parts = r.flags.map(f => {
+      if (!/^не пройдено \d+ тест/.test(f)) return `<span>${esc(f)}</span>`;
+      const groups = r.subs.map(x => ({ x, items: overdueOf(D, r.s.uid, x.id) })).filter(g => g.items.length);
+      return `<details class="ov-det" onclick="event.stopPropagation()"><summary>${esc(f)} <span class="ov-caret">▾</span></summary><div class="ov-list">${groups.map(g => `<div class="ov-sub"><b>${esc(g.x.icon || '')} ${esc(g.x.name)}</b> <small>· ${g.items.length}</small>
+        <ul>${g.items.map(l => `<li><a href="#/test/${g.x.id}/lesson/${l.id}" ${modalMode ? 'data-close' : ''} title="Відкрити тест">📝 ${l.n != null ? '§ ' + esc(l.n) + '. ' : ''}${esc(l.title || '')}</a><small>${l.date ? ' · урок ' + esc(fmtDay(l.date)) : ''}</small></li>`).join('')}</ul>
+        <a class="ov-j" href="#/teacher/results/journal/${g.x.cls}/${g.x.id}" ${modalMode ? 'data-close' : ''}>📒 Журнал класу</a></div>`).join('')}</div></details>`;
+    });
+    return modalMode ? `<div class="flag-box">⚠️ ${parts.join(' · ')}</div>` : `<small class="flag">⚠️ ${parts.join(' · ')}</small>`;
+  }
   function subjectRow(D, x) {
     const studs = D.students.filter(s => s.cls === x.cls);
     const ms = studs.map(s => metric(D, s.uid, x.id));
@@ -1789,7 +1892,7 @@
           <div class="day-chart">${perDay.map((n, i) => `<div class="dc-col" title="${days[i].toLocaleDateString('uk-UA')}: ${n} спроб"><b>${n || ''}</b><i style="height:${Math.round(n / maxDay * 100)}%"></i><span>${days[i].getDate()}</span></div>`).join('')}</div></div>
         <div class="card pad"><h3 class="rs-h">🎯 Рівні навчальних досягнень</h3>${levelBars(scores)}</div>
         <div class="card pad"><h3 class="rs-h">⚠️ Потребують уваги</h3>
-          ${attention.length ? `<ul class="rs-list">${attention.map(r => `<li><a href="javascript:void(0)" data-st="${r.s.uid}">${esc(r.s.name)}</a> <span class="muted">${r.s.cls} кл.</span><br><small>${r.flags.map(esc).join(' · ')}</small></li>`).join('')}</ul>` : '<p class="muted" style="font-weight:700">Усе добре — тривожних сигналів немає 🎉</p>'}
+          ${attention.length ? `<ul class="rs-list">${attention.map(r => `<li><a href="javascript:void(0)" data-st="${r.s.uid}">${esc(r.s.name)}</a> <span class="muted">${r.s.cls} кл.</span><br>${flagsHtml(D, r, false)}</li>`).join('')}</ul>` : '<p class="muted" style="font-weight:700">Усе добре — тривожних сигналів немає 🎉</p>'}
           <a class="btn light sm" href="#/teacher/results/students">Усі учні →</a></div>
         <div class="card pad"><h3 class="rs-h">🧗 Найскладніші тести</h3>
           ${hard.length ? `<ul class="rs-list">${hard.map(h => `<li><b>${esc(h.title)}</b><br><small>${subLabel(D.subById[h.course])} · середній ${h.avg} · зараховано ${h.rate}% з ${h.n} спроб</small></li>`).join('')}</ul>
@@ -2067,7 +2170,7 @@
       const l = list();
       box.querySelector('#stOut').innerHTML = `<p class="muted rs-sum">Учнів: <b>${l.length}</b> · потребують уваги: <b>${l.filter(r => r.flags.length).length}</b></p>
         <div class="card table-wrap" style="max-height:72vh"><table class="tbl tbl-compact rs-stu-tbl"><thead><tr><th>Учень</th><th class="c">Середній</th><th style="width:26%">Пройдено уроків</th><th class="c">Тести · спроби</th><th class="c">Останній вхід</th></tr></thead><tbody>
-        ${l.map(r => `<tr><td class="t-name"><a href="javascript:void(0)" data-st="${r.s.uid}">${esc(r.s.name)}</a><small>${r.s.cls} клас</small>${r.flags.length ? `<small class="flag">⚠️ ${r.flags.map(esc).join(' · ')}</small>` : ''}</td>
+        ${l.map(r => `<tr><td class="t-name"><a href="javascript:void(0)" data-st="${r.s.uid}">${esc(r.s.name)}</a><small>${r.s.cls} клас</small>${flagsHtml(D, r, false)}</td>
           <td class="c"><span class="cell ${gradeClass(r.avg)}">${r.avg ?? '—'}</span></td><td>${doneBar(r.done)}</td><td class="c t-meta"><b>${r.passed}</b><small>${r.attempts} спроб</small></td>
           <td class="c t-meta"><b>${ago(r.last)}</b></td></tr>`).join('') || '<tr><td colspan="5" class="empty">Нікого не знайдено</td></tr>'}
         </tbody></table></div>`;
@@ -2086,7 +2189,7 @@
     const r = studentRow(D, s);
     let rs = D.results.filter(x => x.uid === s.uid && D.subById[x.course]);
     const draw = () => `<h2>${esc(s.name)}</h2><p class="muted" style="font-weight:700;margin-bottom:12px">${s.cls} клас · логін <code>${esc(s.login || '')}</code> · останній вхід: ${ago(r.last)}</p>
-      ${r.flags.length ? `<div class="flag-box">⚠️ ${r.flags.map(esc).join(' · ')}</div>` : ''}
+      ${flagsHtml(D, r, true)}
       <div class="stat-tiles sm"><div class="card stat-tile"><div class="v">${r.avg ?? '—'}</div><div class="k">Середній бал</div></div>
         <div class="card stat-tile"><div class="v">${r.passed}</div><div class="k">Тестів зараховано</div></div>
         <div class="card stat-tile"><div class="v">${r.done == null ? '—' : Math.round(r.done * 100) + '%'}</div><div class="k">Пройдено уроків</div></div></div>
